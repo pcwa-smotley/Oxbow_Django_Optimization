@@ -1,0 +1,1279 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <meta name="apply-bias-endpoint" content="/api/optimization-runs/apply-bias/">
+    <title>{{ title|default:"ABAY Reservoir Optimization Dashboard" }}</title>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@14.3.0/dist/handsontable.full.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/handsontable@14.3.0/dist/handsontable.full.min.js"></script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-area">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="logo-icon">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                    </svg>
+                    <span class="logo-text">Oxbow Opt</span>
+                </div>
+                <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="sidebar-content">
+                <div class="user-profile-summary">
+                    <div class="user-avatar">
+                        {{ user.first_name|first|default:user.username|first|upper }}
+                    </div>
+                    <div class="user-details">
+                        <span class="user-name">{{ user.first_name|default:user.username }}</span>
+                        <span class="session-status" id="session-info">Active</span>
+                    </div>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <button class="nav-item active" onclick="switchTab('dashboard', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                        <span>Dashboard</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('optimization', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <span>Run Optimization</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('parameters', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        <span>Parameters</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('data', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <span>Data Table</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('history', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <span>History</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('prices', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                        <span>Prices</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('rafting', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 22h20"></path><path d="M12 2v8"></path><path d="M12 10l4-4"></path><path d="M12 10L8 6"></path><path d="M4.93 19.07l4.24-4.24"></path><path d="M14.83 14.83l4.24 4.24"></path><circle cx="12" cy="12" r="4"></circle></svg>
+                        <span>Rafting</span>
+                    </button>
+                    <button class="nav-item" onclick="switchTab('alerts', event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        <span>Alerts</span>
+                    </button>
+                </nav>
+
+                <div class="sidebar-footer">
+                    <a href="/profile/" class="nav-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        <span>Profile</span>
+                    </a>
+                    <a href="/logout/" class="nav-item logout" onclick="return confirm('Are you sure you want to logout?')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                        <span>Logout</span>
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <button class="mobile-menu-btn" id="mobileMenuBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <h1 class="page-title">ABAY Reservoir Optimization</h1>
+                <div class="top-bar-actions">
+                    <!-- Placeholder for any top-right actions if needed -->
+                </div>
+            </header>
+
+            <!-- System Status Bar -->
+            <div class="system-status-bar" id="systemStatusBar">
+                <div class="status-indicator-item" id="statusPI">
+                    <span class="status-dot green" id="statusPIDot"></span>
+                    <span class="status-label">PI System</span>
+                    <span class="status-value" id="statusPIValue">Connected</span>
+                </div>
+                <div class="status-indicator-item" id="statusABAY">
+                    <span class="status-dot green" id="statusABAYDot"></span>
+                    <span class="status-label">ABAY</span>
+                    <span class="status-value" id="statusABAYValue">-- ft</span>
+                    <span class="status-trend flat" id="statusABAYTrend">--</span>
+                </div>
+                <div class="status-indicator-item" id="statusOXPH">
+                    <span class="status-dot green" id="statusOXPHDot"></span>
+                    <span class="status-label">OXPH</span>
+                    <span class="status-value" id="statusOXPHValue">-- MW</span>
+                </div>
+                <div class="status-indicator-item" id="statusLastRun">
+                    <span class="status-dot green" id="statusLastRunDot"></span>
+                    <span class="status-label">Last Run</span>
+                    <span class="status-value" id="statusLastRunValue">--</span>
+                </div>
+                <div class="status-indicator-item" id="statusWS">
+                    <span class="status-dot green" id="statusWSDot"></span>
+                    <span class="status-label">WebSocket</span>
+                    <span class="status-value" id="statusWSValue">Live</span>
+                </div>
+            </div>
+
+            <!-- Next Setpoint Card -->
+            <div class="setpoint-card-container" id="nextSetpointCard">
+                <div class="setpoint-card-content">
+                    <div class="setpoint-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                    </div>
+                    <div class="setpoint-info">
+                        <h3>Upcoming OXPH Changes</h3>
+                        <div class="setpoint-changes" id="setpointChangesList">
+                            <span class="no-changes">No upcoming setpoint changes detected.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content Container -->
+            <div class="content-wrapper">
+                <!-- Dashboard Tab -->
+                <div id="dashboard" class="tab-content active">
+                 <div class="dashboard-overview-header">
+                    <div class="dashboard-overview-actions">
+                        <button class="btn" onclick="openRunOptimizationModal()">Run Optimization</button>
+                        <button class="icon-button" id="loadRunButton" onclick="openRunHistoryModal()" aria-haspopup="dialog">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                                <polyline points="9 16 11 18 15 14"></polyline>
+                            </svg>
+                            <span>Load Previous Run</span>
+                        </button>
+                        <button class="btn hidden" id="saveNewOptimizationBtn" onclick="saveEditedOptimization()" disabled>Save as New Optimization</button>
+                    </div>
+                </div>
+                <div class="active-run-meta" id="activeRunMeta">
+                    <span id="activeRunUser"></span>
+                    <span id="activeRunTimestamp"></span>
+                    <span id="mfraSourceIndicator" class="mfra-source-badge" style="display:none;"></span>
+                </div>
+
+                <!-- KPI Gauge Strip -->
+                <div class="kpi-gauge-strip" id="kpiGaugeStrip">
+                    <div class="kpi-gauge-card">
+                        <div class="kpi-gauge-chart" id="gaugeElevation"></div>
+                        <div class="kpi-gauge-label">ABAY Elevation</div>
+                    </div>
+                    <div class="kpi-gauge-card">
+                        <div class="kpi-gauge-chart" id="gaugeOXPH"></div>
+                        <div class="kpi-gauge-label">OXPH Output</div>
+                    </div>
+                    <div class="kpi-gauge-card">
+                        <div class="kpi-gauge-chart" id="gaugeSpillRisk"></div>
+                        <div class="kpi-gauge-label">Spill Risk</div>
+                    </div>
+                    <div class="kpi-gauge-card">
+                        <div class="kpi-gauge-chart" id="gaugeRevenue"></div>
+                        <div class="kpi-gauge-label">Revenue Rate</div>
+                    </div>
+                    <div class="kpi-gauge-card">
+                        <div class="kpi-gauge-chart" id="gaugeConfidence"></div>
+                        <div class="kpi-gauge-label">Forecast Confidence</div>
+                    </div>
+                </div>
+
+                <div class="grid-layout">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h3 class="chart-title">ABAY Elevation (24h Lookback + 4 Day Forecast)</h3>
+                            <div class="chart-header-actions">
+                                <div class="bias-control-group">
+                                    <span class="bias-display" id="currentBiasDisplay" title="Current Bias">Bias: 0 CFS</span>
+                                    <label for="biasValueInput" class="sr-only">New Bias (CFS)</label>
+                                    <input type="number" id="biasValueInput" class="form-control" step="0.1" placeholder="New Bias" style="width: 100px;">
+                                    <button class="btn btn-small" id="applyBiasButton" onclick="applyBiasCorrection(this)">Set Bias</button>
+                                </div>
+                                <button class="btn btn-small btn-secondary" onclick="applyActuals()">Use Actuals</button>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <div id="elevationChart" style="width:100%;height:100%;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 5px; margin-bottom: 5px;">
+                            <button class="icon-button" onclick="refreshCharts()" title="Refresh PI">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/>
+                                </svg>
+                                <span>Refresh PI</span>
+                            </button>
+                        </div>
+                        <div class="chart-legends">
+                            <div class="legend-item" data-chart="elevation" data-dataset="0">
+                                <div class="legend-color" style="background: #e74c3c;"></div>
+                                <span>Actual Elevation</span>
+                            </div>
+                            <div class="legend-item" data-chart="elevation" data-dataset="1">
+                                <div class="legend-color" style="background: #f39c12;"></div>
+                                <span>Bias Corrected Expected</span>
+                            </div>
+                            <div class="legend-item" data-chart="elevation" data-dataset="2">
+                                <div class="legend-color" style="background: #3498db;"></div>
+                                <span>Optimized Forecast</span>
+                            </div>
+                            <div class="legend-item" data-chart="elevation" data-dataset="3">
+                                <div class="legend-color" style="background: #dc3545; border-style: dashed;"></div>
+                                <span>Float Level</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <div class="chart-header">
+                           <h3 class="chart-title" id="powerChartTitle">OXPH Output (24h + 4 Day Forecast)</h3>
+                            <div class="chart-header-actions">
+                                <label for="powerChartModeSelect" class="sr-only">Select metric</label>
+                                <select id="powerChartModeSelect" class="chart-mode-select" onchange="changePowerChartMode(this.value)">
+                                    <option value="oxph">OXPH Output</option>
+                                    <option value="mfra">MFRA MW Output</option>
+                                    <option value="river">R30 &amp; R4 River Flows</option>
+                                </select>
+                                <button id="fetchDaAwardsBtn" class="btn btn-small btn-outline" onclick="fetchCAISODAAwards()" title="Fetch CAISO DA awards for Middle Fork">Fetch DA Awards</button>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <div id="oxphChart" style="width:100%;height:100%;"></div>
+                        </div>
+                        <div class="chart-legends" id="powerChartLegend"></div>
+                    </div>
+                </div>
+
+                <!-- System Schematic -->
+                <div class="system-schematic-container" id="systemSchematicContainer">
+                    <div class="schematic-header">
+                        <h3>Live System Overview</h3>
+                        <button class="btn btn-small btn-secondary" onclick="toggleSchematic()">Toggle View</button>
+                    </div>
+                    <div class="schematic-svg-wrapper" id="schematicSvgWrapper">
+                        <!-- SVG schematic rendered by system-schematic.js -->
+                    </div>
+                </div>
+
+                <!-- 7-Day Schedule Timeline -->
+                <div class="timeline-container" id="timelineContainer">
+                    <div class="timeline-header">
+                        <h3>7-Day Operations Timeline</h3>
+                        <div class="timeline-controls">
+                            <button class="btn btn-small btn-secondary timeline-zoom-btn" onclick="timelineZoom('in')">Zoom In</button>
+                            <button class="btn btn-small btn-secondary timeline-zoom-btn" onclick="timelineZoom('out')">Zoom Out</button>
+                            <button class="btn btn-small btn-secondary" onclick="timelineZoom('reset')">Reset</button>
+                        </div>
+                    </div>
+                    <div class="timeline-chart-wrapper" id="timelineChart" style="width:100%;height:220px;"></div>
+                </div>
+            </div>
+
+            <!-- Optimization Tab -->
+            <div id="optimization" class="tab-content">
+                <div class="control-panel">
+                    <div class="control-section">
+                        <h3>Run Configuration</h3>
+                        <div class="form-group">
+                            <label>Run Mode</label>
+                            <select class="form-control" id="runMode" onchange="toggleHistoricalDate()">
+                                <option value="forecast">Forecast Mode</option>
+                                <option value="historical">Historical Simulation</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="historicalDateGroup">
+                            <label>Historical Start Date</label>
+                            <input type="date" class="form-control" id="historicalDate">
+                        </div>
+                        <div class="form-group">
+                            <label>Forecast Source</label>
+                            <select class="form-control" id="forecastSource">
+                                <option value="hydroforecast-short-term">HydroForecast</option>
+                                <option value="cnrfc">CNRFC</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Smoothing Priority</label>
+                            <input type="range" class="priority-slider" id="prioritySmoothOperation"
+                                   min="1" max="5" value="3" step="1"
+                                   oninput="updatePriorityDisplay(this)">
+                            <span class="priority-value">3</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Target Midpoint Elevation</label>
+                            <input type="range" class="priority-slider" id="priorityMidpointElevation"
+                                   min="1" max="5" value="4" step="1"
+                                   oninput="updatePriorityDisplay(this)">
+                            <span class="priority-value">4</span>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <div class="constraint-toggles">
+                            <h4>Constraint Options</h4>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="enableSmoothing" checked>
+                                Enable OXPH Smoothing Penalty
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="enableMidpoint" checked>
+                                Target Midpoint Elevation
+                            </label>
+                        </div>
+
+                        <div class="form-group" id="smoothingWeightGroup">
+                            <label>Smoothing Penalty Weight</label>
+                            <input type="number" class="form-control" id="smoothingWeight"
+                                   value="100" step="10" min="0" max="1000">
+                            <small>Higher values reduce OXPH changes</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 20px;">
+                    <!-- Button moved to dashboard header -->
+                </div>
+            </div>
+
+            <!-- Parameters Tab -->
+            <div id="parameters" class="tab-content">
+                <div class="parameter-grid">
+                    <div class="control-section">
+                        <h3>Reservoir Constants</h3>
+                        <div class="form-group">
+                            <label>ABAY Min Elevation (ft)</label>
+                            <input type="number" class="form-control" value="1168.0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>ABAY Max Elevation Buffer (ft)</label>
+                            <input type="number" class="form-control" value="0.3" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>ABAY Elevation per AF</label>
+                            <input type="number" class="form-control" value="0.0132" step="0.0001">
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>OXPH Generator</h3>
+                        <div class="form-group">
+                            <label>OXPH Min MW</label>
+                            <input type="number" class="form-control" value="0.8" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>OXPH Max MW</label>
+                            <input type="number" class="form-control" value="5.8" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>OXPH Ramp Rate (MW/min)</label>
+                            <input type="number" class="form-control" value="0.042" step="0.001">
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>Linear Programming Weights</h3>
+                        <div class="form-group">
+                            <label>Spillage Penalty Weight</label>
+                            <input type="number" class="form-control" value="10000.0" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Summer MW Reward Weight</label>
+                            <input type="number" class="form-control" value="1000.0" step="10">
+                        </div>
+                        <div class="form-group">
+                            <label>Base Smoothing Penalty</label>
+                            <input type="number" class="form-control" value="100.0" step="1">
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                <h3>Rafting Schedule</h3>
+                <div class="form-group">
+                    <label>Water Year Type</label>
+                    <select class="form-control" id="waterYearType">
+                        <option value="Wet">Wet</option>
+                        <option value="Above Normal">Above Normal</option>
+                        <option value="Below Normal">Below Normal</option>
+                        <option value="Dry">Dry</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Extreme Critical">Extreme Critical</option>
+                    </select>
+                    <small class="form-text">Current water year classification (update annually)</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Season Start</label>
+                    <input type="text" class="form-control" value="Saturday before Memorial Day" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label>Season End</label>
+                    <input type="date" class="form-control" id="seasonEndDate" value="2025-09-30">
+                </div>
+
+                <div class="form-group">
+                    <label>OXPH Target MW</label>
+                    <input type="number" class="form-control" id="oxphTargetMW" value="5.8" step="0.1" min="0.8" max="5.8">
+                </div>
+                <div class="form-group">
+                    <label>Early Release Saturdays (YYYY-MM-DD)</label>
+                    <textarea class="form-control" id="earlyReleaseDates" rows="3" placeholder="2025-05-24&#10;2025-07-04&#10;2025-08-23">2025-05-24
+            2025-07-04
+            2025-08-23</textarea>
+                    <small class="form-text">One date per line, update annually</small>
+                </div>
+            </div>
+                            </div>
+
+                            <div style="text-align: center; margin-top: 25px;">
+                                <button class="btn" onclick="saveParameters()">Save Parameters</button>
+                                <button class="btn btn-secondary" onclick="resetParameters()">Reset to Defaults</button>
+                            </div>
+                        </div>
+
+            <!-- Data Table Tab -->
+            <div id="data" class="tab-content">
+                <div style="margin-bottom: 20px;">
+                    <h3>Forecast &amp; Actual Data</h3>
+                    <div class="table-controls">
+                        <button class="btn btn-small btn-secondary" onclick="resetForecast()">Reset</button>
+                        <button class="btn btn-small" id="saveTableChangesBtn" onclick="saveEditedOptimization()" disabled>Save as New Optimization</button>
+                    </div>
+                </div>
+
+                <div class="data-table-wrapper">
+                    <div id="forecastTable" class="forecast-table"></div>
+                </div>
+            </div>
+
+            <!-- Historical Analysis Tab -->
+            <div id="history" class="tab-content">
+                <div class="control-section" style="margin-bottom: 20px;">
+                    <h3>Historical Analysis Period</h3>
+                    <div style="display: flex; gap: 15px; align-items: end;">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" class="form-control" id="historyStartDate">
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" class="form-control" id="historyEndDate">
+                        </div>
+                        <button class="btn" onclick="loadHistoricalData()">Load Historical Data</button>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Historical Performance Analysis</h3>
+                    </div>
+                    <div class="chart-wrapper">
+                        <div id="historicalChart" style="width:100%;height:100%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Electricity Prices Tab -->
+            <div id="prices" class="tab-content">
+                <div class="grid-layout">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                        <h3 class="chart-title">Electricity Prices (48 Hour Forecast)</h3>
+                        <div>
+                            <button class="btn btn-secondary" onclick="fetchElectricityPrices()">Refresh Prices</button>
+                            <button class="btn" onclick="calculateRevenue()">Calculate Revenue</button>
+                        </div>
+                        </div>
+                        <div class="chart-wrapper">
+                <div id="priceChart" style="width:100%;height:100%;"></div>
+            </div>
+                        <div class="chart-legends">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3498db;"></div>
+                    <span>Day-Ahead Price</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e74c3c;"></div>
+                    <span>Real-Time Price</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f39c12; border-style: dashed;"></div>
+                    <span>15-Min Price</span>
+                </div>
+            </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <div class="chart-header">
+                <h3 class="chart-title">Price Statistics & Revenue Analysis</h3>
+            </div>
+                        <div style="padding: 20px;">
+                <div class="price-stats-grid">
+                    <div class="stats-section">
+                        <h4>Day-Ahead Price</h4>
+                        <div id="day_ahead_price_stats" class="stats-container">
+                            <!-- Statistics will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    <div class="stats-section">
+                        <h4>Real-Time Price</h4>
+                        <div id="real_time_price_stats" class="stats-container">
+                            <!-- Statistics will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <div id="revenueAnalysis" class="revenue-analysis">
+                    <!-- Revenue analysis will be populated by JavaScript -->
+                </div>
+
+                <div class="price-controls">
+                    <div class="form-group">
+                        <label>Node ID (Default: CAISO SP15)</label>
+                        <input type="text" class="form-control" id="nodeId" value="20000002064" placeholder="Enter YES Energy Node ID">
+                    </div>
+                    <button class="btn" onclick="fetchElectricityPrices(document.getElementById('nodeId').value)">
+                        Fetch Prices for Node
+                    </button>
+                </div>
+            </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="rafting" class="tab-content">
+                <div class="grid-layout">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h3 class="chart-title">Rafting Times</h3>
+                            <button class="btn btn-secondary" onclick="refreshRaftingTimes()">Refresh</button>
+                        </div>
+                        <!-- Replace the existing rafting times content with this enhanced version -->
+                        <div class="rafting-times-content">
+                            <div class="rafting-schedule-grid">
+                                <!-- Today's Schedule -->
+                                <div class="rafting-day-card">
+                                    <div class="card-header">
+                                        <h4>
+                                            <span class="day-icon">📅</span>
+                                            Today
+                                        </h4>
+                                        <span class="day-date" id="todayDate"></span>
+                                    </div>
+                                    <div class="card-body" id="todayRaftingInfo">
+                                        <div class="time-block">
+                                            <div class="time-row">
+                                                <span class="time-icon">🚣</span>
+                                                <div class="time-details">
+                                                    <span class="time-label">Rafting Hours</span>
+                                                    <span class="time-value">
+                                                        <span id="todayStartTime">--:--</span> - <span id="todayEndTime">--:--</span>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="adjustment-block">
+                                            <div class="adjustment-header">
+                                                <span class="adjustment-icon">⚡</span>
+                                                <span class="adjustment-title">OXPH Adjustment</span>
+                                            </div>
+                                            <div class="adjustment-details">
+                                                <div class="detail-row">
+                                                    <span class="detail-label">Start Ramp:</span>
+                                                    <span class="detail-value" id="todayAdjustmentTime">--:--</span>
+                                                </div>
+                                                <div class="detail-row">
+                                                    <span class="detail-label">Power Setting:</span>
+                                                    <span class="detail-value power-setting" id="todayOxphSetting">-- MW</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Tomorrow's Schedule -->
+                                <div class="rafting-day-card">
+                                    <div class="card-header">
+                                        <h4>
+                                            <span class="day-icon">📆</span>
+                                            Tomorrow
+                                        </h4>
+                                        <span class="day-date" id="tomorrowDate"></span>
+                                    </div>
+                                    <div class="card-body" id="tomorrowRaftingInfo">
+                                        <div class="time-block">
+                                            <div class="time-row">
+                                                <span class="time-icon">🚣</span>
+                                                <div class="time-details">
+                                                    <span class="time-label">Rafting Hours</span>
+                                                    <span class="time-value">
+                                                        <span id="tomorrowStartTime">--:--</span> - <span id="tomorrowEndTime">--:--</span>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="adjustment-block">
+                                            <div class="adjustment-header">
+                                                <span class="adjustment-icon">⚡</span>
+                                                <span class="adjustment-title">OXPH Adjustment</span>
+                                            </div>
+                                            <div class="adjustment-details">
+                                                <div class="detail-row">
+                                                    <span class="detail-label">Start Ramp:</span>
+                                                    <span class="detail-value" id="tomorrowAdjustmentTime">--:--</span>
+                                                </div>
+                                                <div class="detail-row">
+                                                    <span class="detail-label">Power Setting:</span>
+                                                    <span class="detail-value power-setting" id="tomorrowOxphSetting">-- MW</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Add this external calendar link button -->
+                            <div class="external-calendar-section">
+                                <div class="calendar-divider">
+                                    <span>Need the full annual schedule?</span>
+                                </div>
+                                <a href="https://www.dreamflows.com/Pages/OxbowSchedule.php"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="btn btn-calendar">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 8px;">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"></path>
+                                    </svg>
+                                    View Full Rafting Calendar
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-left: 5px;">
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                        <polyline points="15 3 21 3 21 9"></polyline>
+                                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                                    </svg>
+                                </a>
+                                <p class="calendar-note">
+                                    View the complete Oxbow rafting schedule on DreamFlows
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ramp Calculator Widget -->
+                    <div class="control-section">
+                        <h3>OXPH Ramp Calculator</h3>
+                        <div class="ramp-calculator">
+                            <div class="form-group">
+                                <label>Current OXPH Setting (MW)</label>
+                                <input type="number" class="form-control" id="currentMW" value="0.8" step="0.1" min="0" max="5.8">
+                            </div>
+                            <div class="form-group">
+                                <label>Target MW</label>
+                                <input type="number" class="form-control" id="targetMW" value="5.8" step="0.1" min="0.8" max="5.8">
+                            </div>
+                            <div class="form-group">
+                                <label>Target Time</label>
+                                <input type="time" class="form-control" id="targetTime" value="08:00">
+                            </div>
+                            <div class="form-group">
+                                <label>Target Date</label>
+                                <input type="date" class="form-control" id="targetDate">
+                            </div>
+                            <button class="btn" onclick="calculateRampTime()">Calculate Adjustment Time</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Replace the alerts tab content in dashboard.html with this enhanced version -->
+            <div id="alerts" class="tab-content">
+                <div class="alert-manager">
+                    <div class="control-section">
+            <h3>Alert Configuration</h3>
+            <p>Configure alerts for flows, elevations, and operational parameters</p>
+        </div>
+
+                    <!-- Alert Categories with Accordion -->
+                    <div class="alert-accordion" id="alertAccordion">
+
+            <!-- Flows Category -->
+            <div class="alert-category">
+                <div class="category-header" onclick="toggleCategory('flowsCategory')">
+                    <h4>
+                        <i class="category-icon">▼</i>
+                        Flows
+                    </h4>
+                    <span class="category-status">3 active alerts</span>
+                </div>
+                <div id="flowsCategory" class="category-content active">
+                    <form id="flowsAlertForm">
+                        <table class="alert-table">
+                            <thead>
+                                <tr>
+                                    <th>Location</th>
+                                    <th>Lower Limit (CFS)</th>
+                                    <th>Upper Limit (CFS)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>R4</th>
+                                    <td><input type="number" class="form-control" id="r4_lo" placeholder="Not Set" value="400"></td>
+                                    <td><input type="number" class="form-control" id="r4_hi" placeholder="Not Set" value="500"></td>
+                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r4')">Save</button></td>
+                                </tr>
+                                <tr>
+                                    <th>R11</th>
+                                    <td><input type="number" class="form-control" id="r11_lo" placeholder="Not Set" value="300"></td>
+                                    <td><input type="number" class="form-control" id="r11_hi" placeholder="Not Set" value="9000"></td>
+                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r11')">Save</button></td>
+                                </tr>
+                                <tr>
+                                    <th>R30</th>
+                                    <td><input type="number" class="form-control" id="r30_lo" placeholder="Not Set" value="80"></td>
+                                    <td><input type="number" class="form-control" id="r30_hi" placeholder="Not Set" value="350"></td>
+                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r30')">Save</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </form>
+                </div>
+            </div>
+
+            <!-- After Bay Category -->
+            <div class="alert-category">
+                <div class="category-header" onclick="toggleCategory('afterbayCategory')">
+                    <h4>
+                        <i class="category-icon">▶</i>
+                        After Bay
+                    </h4>
+                    <span class="category-status">2 active alerts</span>
+                </div>
+                <div id="afterbayCategory" class="category-content">
+                    <form id="afterbayAlertForm">
+                        <table class="alert-table">
+                            <thead>
+                                <tr>
+                                    <th>Parameter</th>
+                                    <th>Lower Limit</th>
+                                    <th>Upper Limit</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>Elevation (ft)</th>
+                                    <td><input type="number" class="form-control" id="afterbay_lo" step="0.1" placeholder="Not Set" value="1166.5"></td>
+                                    <td><input type="number" class="form-control" id="afterbay_hi" step="0.1" placeholder="Not Set" value="1176.0"></td>
+                                    <td><button type="button" class="btn btn-sm" onclick="saveAfterbayAlert()">Save</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="alert-option">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="floatChangeAlert" checked>
+                                Alert if Float Level Changes
+                            </label>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Recreational Releases Category -->
+            <div class="alert-category">
+                <div class="category-header" onclick="toggleCategory('raftingCategory')">
+                    <h4>
+                        <i class="category-icon">▶</i>
+                        Recreational Releases
+                    </h4>
+                    <span class="category-status">Rafting alerts active</span>
+                </div>
+                <div id="raftingCategory" class="category-content">
+                    <form id="raftingAlertForm">
+                        <table class="alert-table">
+                            <thead>
+                                <tr>
+                                    <th>Rafting Times</th>
+                                    <th>Start Time</th>
+                                    <th>End Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>Today</th>
+                                    <td><input type="time" class="form-control" id="today_recStart" placeholder="Rafting Time"></td>
+                                    <td><input type="time" class="form-control" id="today_recEnd" placeholder="Rafting Time"></td>
+                                </tr>
+                                <tr>
+                                    <th>Tomorrow</th>
+                                    <td><input type="time" class="form-control" id="tomorrow_recStart" placeholder="Rafting Time"></td>
+                                    <td><input type="time" class="form-control" id="tomorrow_recEnd" placeholder="Rafting Time"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="ramp-buffer-section">
+                            <h5>OXPH Ramp Timing Alerts</h5>
+                            <p class="help-text">Alert if OXPH setpoint is not adjusted in time for rafting schedule</p>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Ramp Up Buffer (minutes)</label>
+                                    <input type="number" class="form-control" id="rampup_oxbow" placeholder="Minutes" value="90" min="0">
+                                    <small>Alert this many minutes before rafting starts</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Ramp Down Buffer (minutes)</label>
+                                    <input type="number" class="form-control" id="rampdown_oxbow" placeholder="Minutes" value="15" min="0">
+                                    <small>Alert this many minutes before rafting ends</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn" onclick="saveRaftingAlerts()">Save Rafting Alerts</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Generation Category -->
+            <div class="alert-category">
+                <div class="category-header" onclick="toggleCategory('generationCategory')">
+                    <h4>
+                        <i class="category-icon">▶</i>
+                        Generation
+                    </h4>
+                    <span class="category-status">OXPH deviation monitoring</span>
+                </div>
+                <div id="generationCategory" class="category-content">
+                    <form id="generationAlertForm">
+                        <table class="alert-table">
+                            <thead>
+                                <tr>
+                                    <th>Unit</th>
+                                    <th>Max Deviation (MW)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>OXPH</th>
+                                    <td><input type="number" class="form-control" id="oxbow_deviation" step="0.1" placeholder="Not Set" value="0.5"></td>
+                                    <td><button type="button" class="btn btn-sm" onclick="saveGenerationAlert()">Save</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="help-text">Alert when OXPH deviates from setpoint by more than this amount</p>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+
+                    <!-- Alert History Section -->
+                    <div class="control-section" style="margin-top: 30px;">
+            <h4>Recent Alert History</h4>
+            <div id="alertHistoryList" class="alert-history-list">
+                <!-- Alert history will be populated here -->
+                <div class="alert-history-item">
+                    <span class="alert-time">10:35 AM</span>
+                    <span class="alert-type warning">R4 Low Flow</span>
+                    <span class="alert-value">385 CFS</span>
+                    <span class="alert-status">Acknowledged</span>
+                </div>
+                <div class="alert-history-item">
+                    <span class="alert-time">09:15 AM</span>
+                    <span class="alert-type critical">OXPH Ramp Alert</span>
+                    <span class="alert-value">Not adjusted for rafting</span>
+                    <span class="alert-status">Active</span>
+                </div>
+            </div>
+        </div>
+
+                    <!-- Notification Test Section -->
+                    <div class="control-section" style="margin-top: 30px; border-top: 2px solid #ecf0f1; padding-top: 20px;">
+                        <h4>Test Notification System</h4>
+                        <p style="color: #7f8c8d; margin-bottom: 15px;">
+        Test your notification settings to ensure alerts will be delivered correctly.
+    </p>
+
+    <div class="notification-test-container" style="display: flex; gap: 15px; align-items: flex-start;">
+        <div style="flex: 1;">
+            <label for="testNotificationType">Notification Type:</label>
+            <select class="form-control" id="testNotificationType" style="margin-top: 5px;">
+                <option value="browser">Browser Notification</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS Text Message</option>
+                <option value="voice">Voice Call</option>
+            </select>
+        </div>
+
+        <button class="btn" onclick="testNotificationSystem()" id="testNotificationBtn" style="margin-top: 24px;">
+            <span id="testNotificationBtnText">Send Test</span>
+        </button>
+    </div>
+
+    <!-- Test Results Display -->
+    <div id="testResultsContainer" style="display: none; margin-top: 20px;">
+        <h5>Test Results:</h5>
+        <div id="testResults" class="test-results">
+            <!-- Results will be populated here -->
+        </div>
+    </div>
+</div>
+
+                    <!-- Link to Profile for Notification Settings -->
+                    <div class="control-section" style="margin-top: 30px; text-align: center;">
+                        <div style="padding: 20px; background: #f8f9fa; border-radius: 5px;">
+                            <p style="margin-bottom: 15px; color: #6c757d;">
+            <i>Configure your notification preferences (email, SMS, browser notifications)</i>
+        </p>
+                            <a href="/profile/" class="btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 5px;">
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                    <path d="M12 1v6m0 6v6m11-11h-6m-6 0H1"></path>
+                                </svg>
+                                Notification Settings
+                            </a>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        </main>
+    </div>
+
+            <div class="modal-backdrop hidden" id="runHistoryBackdrop"></div>
+        <div class="modal run-history-modal hidden" id="runHistoryModal" role="dialog" aria-modal="true" aria-labelledby="runHistoryTitle">
+            <div class="modal-header">
+                <h3 id="runHistoryTitle">Load Optimization Run</h3>
+                <button class="close-btn" onclick="closeRunHistoryModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="runHistoryUserSelect">Select user</label>
+                    <select id="runHistoryUserSelect" class="form-control"></select>
+                </div>
+                <div class="run-history-info" id="runHistoryInfo">Choose a user to view their recent optimization runs.</div>
+                <div class="run-history-list" id="runHistoryList" role="listbox" aria-label="Available optimization runs"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeRunHistoryModal()">Cancel</button>
+                <button class="btn" id="confirmLoadRunBtn" onclick="loadSelectedRun()" disabled>Load Run</button>
+            </div>
+        </div>
+
+        <div class="modal-backdrop hidden" id="raftingWarningBackdrop"></div>
+        <div class="modal warning-modal hidden" id="raftingWarningModal" role="alertdialog" aria-modal="true" aria-labelledby="raftingWarningTitle">
+            <div class="modal-header">
+                <h3 id="raftingWarningTitle">Rafting Schedule Warning</h3>
+                <button class="close-btn" onclick="cancelRaftingWarning()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="raftingWarningMessage">Adjusting the OXPH setpoint during rafting hours may impact scheduled flows. Do you want to continue?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cancelRaftingWarning()">Cancel</button>
+                <button class="btn" id="confirmRaftingChangeBtn">OK</button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay hidden">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <h3>Running Optimization...</h3>
+                <p id="loadingMessage">Initializing optimization process...</p>
+                <div class="progress-timeline" aria-label="Optimization progress">
+                    <div class="progress-line" aria-hidden="true">
+                        <div class="progress-line-fill" id="optimizationProgressLine"></div>
+                    </div>
+                    <ol class="progress-steps" id="optimizationProgressSteps">
+                        <li class="progress-step active" data-step="fetch-data">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Fetch PI data</span>
+                        </li>
+                        <li class="progress-step" data-step="load-forecast">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Load forecast data</span>
+                        </li>
+                        <li class="progress-step" data-step="setup-optimization">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Set up optimization</span>
+                        </li>
+                        <li class="progress-step" data-step="solve-optimization">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Solve optimization</span>
+                        </li>
+                        <li class="progress-step" data-step="recalculate-state">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Recalculate state</span>
+                        </li>
+                        <li class="progress-step" data-step="finalize-results">
+                            <span class="step-dot" aria-hidden="true"></span>
+                            <span class="step-label">Finalize results</span>
+                        </li>
+                    </ol>
+                    <p class="sr-only" id="optimizationProgressStatus" aria-live="polite">Starting optimization...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification -->
+        <div id="notification" class="notification"></div>
+
+        <!-- Boot Sequence Overlay -->
+        <div class="boot-overlay" id="bootOverlay">
+            <div class="boot-logo">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                </svg>
+            </div>
+            <div class="boot-title">ABAY Reservoir Optimization System</div>
+            <div class="boot-checks" id="bootChecks">
+                <div class="boot-check-item" data-delay="300"><span class="check-icon">&#10003;</span> Connecting to database...</div>
+                <div class="boot-check-item" data-delay="600"><span class="check-icon">&#10003;</span> PI System interface ready</div>
+                <div class="boot-check-item" data-delay="900"><span class="check-icon">&#10003;</span> Optimization engine loaded</div>
+                <div class="boot-check-item" data-delay="1200"><span class="check-icon">&#10003;</span> WebSocket channel open</div>
+                <div class="boot-check-item" data-delay="1500"><span class="check-icon">&#10003;</span> Loading operator profile...</div>
+            </div>
+        </div>
+
+        <!-- Command Palette -->
+        <div class="command-palette-backdrop" id="commandPaletteBackdrop">
+            <div class="command-palette" id="commandPalette">
+                <div class="command-palette-input-wrapper">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" class="command-palette-input" id="commandPaletteInput" placeholder="Type a command..." autocomplete="off">
+                    <span class="command-palette-kbd">ESC</span>
+                </div>
+                <div class="command-palette-results" id="commandPaletteResults"></div>
+                <div class="command-palette-footer">
+                    <span><kbd>&#8593;</kbd><kbd>&#8595;</kbd> Navigate</span>
+                    <span><kbd>&#9166;</kbd> Execute</span>
+                    <span><kbd>Esc</kbd> Close</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Overlay -->
+        <div class="shortcuts-overlay" id="shortcutsOverlay">
+            <h3>Keyboard Shortcuts</h3>
+            <div class="shortcut-row"><span class="shortcut-label">Command Palette</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>K</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Dashboard</span><span class="shortcut-keys"><kbd>1</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Run Optimization</span><span class="shortcut-keys"><kbd>2</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Parameters</span><span class="shortcut-keys"><kbd>3</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Data Table</span><span class="shortcut-keys"><kbd>4</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">History</span><span class="shortcut-keys"><kbd>5</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Prices</span><span class="shortcut-keys"><kbd>6</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Rafting</span><span class="shortcut-keys"><kbd>7</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Alerts</span><span class="shortcut-keys"><kbd>8</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Toggle Dark Mode</span><span class="shortcut-keys"><kbd>D</kbd></span></div>
+            <div class="shortcut-row"><span class="shortcut-label">Show Shortcuts</span><span class="shortcut-keys"><kbd>?</kbd></span></div>
+        </div>
+
+        <script src="{% static 'js/session-manager.js' %}"></script>
+
+        <!-- Custom JavaScript -->
+        <script src="{% static 'js/echart-theme.js' %}"></script>
+        <script src="{% static 'js/dashboard.js' %}"></script>
+        <script src="{% static 'js/command-palette.js' %}"></script>
+        <script src="{% static 'js/system-schematic.js' %}"></script>
+</body>
+</html>
+
+
+<!-- Add this script section at the bottom of dashboard.html -->
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Session Management
+    const sessionManager = {
+        init: function() {
+            this.updateSessionInfo();
+            this.startSessionCheck();
+            this.updateActivityIndicator();
+        },
+
+        updateSessionInfo: function() {
+            const sessionInfo = document.getElementById('session-info');
+            if (!sessionInfo) return;
+
+            // Get session info from Django template context
+            const sessionRemembered = {% if request.session.remembered %}true{% else %}false{% endif %};
+            const lastLoginStr = '{{ user.optimization_profile.last_login|date:"c" }}';
+
+            if (sessionRemembered && lastLoginStr) {
+                // Calculate expiry date (7 days from last login)
+                const lastLogin = new Date(lastLoginStr);
+                const expiryDate = new Date(lastLogin.getTime() + (7 * 24 * 60 * 60 * 1000));
+                const now = new Date();
+                const daysLeft = Math.ceil((expiryDate - now) / (24 * 60 * 60 * 1000));
+
+                if (daysLeft > 1) {
+                    sessionInfo.textContent = `Session expires in ${daysLeft} days`;
+                    sessionInfo.style.color = '#27ae60';
+                } else if (daysLeft === 1) {
+                    sessionInfo.textContent = 'Session expires tomorrow';
+                    sessionInfo.style.color = '#f39c12';
+                } else if (daysLeft === 0) {
+                    sessionInfo.textContent = 'Session expires today';
+                    sessionInfo.style.color = '#e74c3c';
+                } else {
+                    sessionInfo.textContent = 'Session expired';
+                    sessionInfo.style.color = '#e74c3c';
+                }
+            } else if (!sessionRemembered) {
+                sessionInfo.textContent = 'Session expires on browser close';
+                sessionInfo.style.color = '#7f8c8d';
+            } else {
+                sessionInfo.textContent = 'Session active';
+                sessionInfo.style.color = '#27ae60';
+            }
+        },
+
+        startSessionCheck: function() {
+            // Check session validity every hour
+            setInterval(() => {
+                this.checkSession();
+            }, 60 * 60 * 1000); // 1 hour
+        },
+
+        checkSession: async function() {
+            try {
+                const response = await fetch('/api/auth-status/');
+                const data = await response.json();
+
+                if (!data.authenticated) {
+                    // Session expired, redirect to login
+                    window.location.href = '/login/?next=' + encodeURIComponent(window.location.pathname);
+                } else {
+                    // Update session info display
+                    this.updateSessionInfo();
+                }
+            } catch (error) {
+                console.error('Session check failed:', error);
+            }
+        },
+
+        updateActivityIndicator: function() {
+            const statusDot = document.querySelector('.status-dot');
+            if (statusDot) {
+                statusDot.classList.add('online');
+            }
+        }
+    };
+
+    // Initialize session manager
+    sessionManager.init();
+
+    // Track user activity (for backend activity tracking)
+    let activityTimer;
+    const trackActivity = () => {
+        clearTimeout(activityTimer);
+        activityTimer = setTimeout(() => {
+            // Send activity ping to server
+            fetch('/api/activity/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            }).catch(() => {});
+        }, 5000); // Debounce for 5 seconds
+    };
+
+    // Track various user activities
+    ['click', 'keypress', 'mousemove', 'scroll'].forEach(event => {
+        document.addEventListener(event, trackActivity, { passive: true });
+    });
+});
+</script>
+
+<div class="modal-backdrop hidden" id="runOptimizationBackdrop"></div>
+        <div class="modal run-optimization-modal hidden" id="runOptimizationModal" role="dialog" aria-modal="true" aria-labelledby="runOptimizationTitle">
+            <div class="modal-header">
+                <h3 id="runOptimizationTitle">Run Optimization</h3>
+                <button class="close-btn" onclick="closeRunOptimizationModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="modal_runMode">Run Mode</label>
+                    <select class="form-control" id="modal_runMode" onchange="toggleModalHistoricalDate()">
+                        <option value="forecast">Forecast Mode</option>
+                        <option value="historical">Historical Simulation</option>
+                    </select>
+                </div>
+                <div class="form-group hidden" id="modal_historicalDateGroup">
+                    <label for="modal_historicalDate">Historical Start Date</label>
+                    <input type="date" class="form-control" id="modal_historicalDate">
+                </div>
+                <div class="form-group">
+                    <label for="modal_forecastSource">Forecast Source</label>
+                    <select class="form-control" id="modal_forecastSource">
+                        <option value="hydroforecast-short-term">HydroForecast</option>
+                        <option value="cnrfc">CNRFC</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-secondary" type="button" onclick="toggleAdvancedOptimizationSettings()" style="margin-bottom: 15px; width: 100%;">
+                    Advanced Settings ▼
+                </button>
+
+                <div id="advancedOptimizationSettings" class="hidden" style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; margin-bottom: 15px; background-color: #f9f9f9;">
+                    <h4 style="margin-top: 0;">Advanced Parameters</h4>
+                    <div class="form-group">
+                        <label for="modal_abayMinElevation">ABAY Min Elevation (ft)</label>
+                        <input type="number" class="form-control" id="modal_abayMinElevation" value="1168.0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="modal_abayMaxElevationBuffer">ABAY Max Elevation Buffer (ft)</label>
+                        <input type="number" class="form-control" id="modal_abayMaxElevationBuffer" value="0.3" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="modal_oxphMinMW">OXPH Min MW</label>
+                        <input type="number" class="form-control" id="modal_oxphMinMW" value="0.8" step="0.1">
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button class="btn btn-sm" onclick="saveAdvancedSettings()">Save</button>
+                        <button class="btn btn-sm btn-secondary" onclick="cancelAdvancedSettings()">Cancel</button>
+                        <button class="btn btn-sm btn-secondary" onclick="revertAdvancedSettings()">Revert to Default</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeRunOptimizationModal()">Cancel</button>
+                <button class="btn" id="optimizeBtn" onclick="runOptimization()">
+                    <span id="optimizeText">Submit</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->

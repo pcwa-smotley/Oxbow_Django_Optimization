@@ -1,0 +1,358 @@
+<!-- django_backend/templates/profile.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - ABAY Optimization</title>
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+    <style>
+        .profile-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .profile-header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .profile-header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .profile-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            color: #34495e;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+        }
+
+        .checkbox-group label {
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+
+        .btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <div>
+                <h1>User Profile</h1>
+                <p>Manage your account settings and alert preferences</p>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                <span>{{ user.username }}</span>
+            </div>
+        </div>
+
+        <div class="profile-container">
+            <a href="/" class="back-link">← Back to Dashboard</a>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post" id="profileForm">
+                {% csrf_token %}
+
+                <!-- Basic Information -->
+                <div class="profile-section">
+                    <h2 class="section-title">Basic Information</h2>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="first_name">First Name</label>
+                            <input type="text" id="first_name" name="first_name"
+                                   value="{{ user.first_name }}" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="last_name">Last Name</label>
+                            <input type="text" id="last_name" name="last_name"
+                                   value="{{ user.last_name }}" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="email">Email Address</label>
+                            <input type="email" id="email" name="email"
+                                   value="{{ user.email }}" required>
+                            <div class="help-text">Used for email notifications</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="phone_number">Phone Number</label>
+                            <input type="tel" id="phone_number" name="phone_number"
+                                   value="{{ profile.phone_number }}"
+                                   placeholder="+1234567890">
+                            <div class="help-text">Format: +1234567890 (for SMS alerts)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notification Preferences -->
+                <div class="profile-section">
+                    <h2 class="section-title">Notification Preferences</h2>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="email_notifications" name="email_notifications"
+                               {% if profile.email_notifications %}checked{% endif %}>
+                        <label for="email_notifications">
+                            <strong>Email Notifications</strong> - Receive alert notifications via email
+                        </label>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="sms_notifications" name="sms_notifications"
+                               {% if profile.sms_notifications %}checked{% endif %}>
+                        <label for="sms_notifications">
+                            <strong>SMS Notifications</strong> - Receive critical alerts via text message
+                        </label>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="browser_notifications" name="browser_notifications"
+                               {% if profile.browser_notifications %}checked{% endif %}>
+                        <label for="browser_notifications">
+                            <strong>Browser Notifications</strong> - Show real-time alerts in browser
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Dashboard Preferences -->
+                <div class="profile-section">
+                    <h2 class="section-title">Dashboard Preferences</h2>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="default_tab">Default Tab</label>
+                            <select id="default_tab" name="default_tab">
+                                <option value="dashboard" {% if profile.default_tab == 'dashboard' %}selected{% endif %}>Dashboard</option>
+                                <option value="optimization" {% if profile.default_tab == 'optimization' %}selected{% endif %}>Run Optimization</option>
+                                <option value="parameters" {% if profile.default_tab == 'parameters' %}selected{% endif %}>Parameters</option>
+                                <option value="history" {% if profile.default_tab == 'history' %}selected{% endif %}>Historical Analysis</option>
+                                <option value="alerts" {% if profile.default_tab == 'alerts' %}selected{% endif %}>Alert Settings</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="refresh_interval">Auto-Refresh Interval (seconds)</label>
+                            <input type="number" id="refresh_interval" name="refresh_interval"
+                                   value="{{ profile.refresh_interval }}" min="30" max="600">
+                            <div class="help-text">Dashboard data refresh rate (30-600 seconds)</div>
+                        </div>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="dark_mode" name="dark_mode"
+                               {% if profile.dark_mode %}checked{% endif %}>
+                        <label for="dark_mode">
+                            <strong>Dark Mode</strong> - Use dark theme for the dashboard
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Password Change -->
+                <div class="profile-section">
+                    <h2 class="section-title">Change Password</h2>
+
+                    <div class="form-group">
+                        <label for="current_password">Current Password</label>
+                        <input type="password" id="current_password" name="current_password">
+                        <div class="help-text">Leave blank if you don't want to change your password</div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="new_password">New Password</label>
+                            <input type="password" id="new_password" name="new_password" minlength="8">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="confirm_password">Confirm New Password</label>
+                            <input type="password" id="confirm_password" name="confirm_password">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Buttons -->
+                <div class="profile-section">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <a href="/" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Form validation
+        document.getElementById('profileForm').addEventListener('submit', function(e) {
+            const newPassword = document.getElementById('new_password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+
+            if (newPassword && newPassword !== confirmPassword) {
+                e.preventDefault();
+                alert('New passwords do not match!');
+                return false;
+            }
+
+            // Phone number validation
+            const phone = document.getElementById('phone_number').value;
+            if (phone && !phone.match(/^\+?[1-9]\d{1,14}$/)) {
+                e.preventDefault();
+                alert('Please enter a valid phone number in international format (e.g., +1234567890)');
+                return false;
+            }
+        });
+
+        // Dark mode toggle
+        document.getElementById('dark_mode').addEventListener('change', function(e) {
+            if (e.target.checked) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        });
+
+        // Initialize dark mode if enabled
+        if (document.getElementById('dark_mode').checked) {
+            document.body.classList.add('dark-mode');
+        }
+    </script>
+</body>
+</html>

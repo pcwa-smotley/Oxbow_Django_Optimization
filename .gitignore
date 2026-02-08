@@ -1,0 +1,70 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.pythonenv/
+.conda/
+.venv*/
+venv*/
+env*/
+
+
+# PyCharm
+.vscode/
+.idea/
+.DS_Store
+.ipynb_checkpoints/
+
+# Claude
+.claude/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Folders to ingnore
+trash/
+WORKING_BACKUP/
+misc_files/
+output/
+caiso_config/
+
+# Config files
+config*
+*.p12
+*.yml
+*.pem
+*.wsdl
+
+# Data files
+*.csv
+
+# Database files
+*.sqlite3
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+#log files
+*.log
+
+*.sqlite
+~$*
+django_backend/staticfiles/

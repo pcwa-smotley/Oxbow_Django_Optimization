@@ -1,0 +1,933 @@
+# ABAY Reservoir Optimization System
+
+A comprehensive Django-based web application for optimizing water reservoir operations at the Afterbay (ABAY) facility. The system provides real-time monitoring, predictive optimization, alert management, and integration with PI System data.
+
+## Table of Contents
+
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [File Structure](#file-structure)
+- [Prerequisites](#prerequisites)
+- [Development Setup](#development-setup)
+- [Production Deployment](#production-deployment)
+- [Configuration](#configuration)
+- [Usage Guide](#usage-guide)
+- [API Documentation](#api-documentation)
+- [Alert System](#alert-system)
+- [Maintenance](#maintenance)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
+## Features
+
+### Core Functionality
+- **Real-time Optimization**: Linear programming-based optimization for reservoir operations
+- **PI System Integration**: Fetches real-time data from OSIsoft PI System
+- **Multi-day Forecasting**: 4-day optimization horizon with hourly resolution
+- **Historical Analysis**: Compare actual vs. optimized performance
+- **Electricity Price Integration**: YES Energy API integration for market prices
+- **Revenue Calculations**: Optimize generation based on electricity prices
+
+### Alert Management
+- **Categorized Alerts**: Flow limits, elevation thresholds, generation deviations
+- **Rafting Schedule Alerts**: OXPH ramp timing for recreational releases
+- **Multi-channel Notifications**: Email, SMS, voice calls, browser notifications
+- **Intelligent Cooldowns**: Prevent alert spam with configurable cooldown periods
+
+### User Interface
+- **Interactive Dashboard**: Real-time charts and system status
+- **Editable Forecasts**: Modify MFRA/OXPH values and see impacts
+- **Parameter Management**: Save and load optimization parameter sets
+- **Dark Mode Support**: User preference for UI theme
+- **Session Management**: "Remember Me" functionality with activity tracking
+
+## System Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Web Browser   │────▶│  Nginx (Proxy)   │────▶│    Gunicorn     │
+│   (Client UI)   │     │   Static Files   │     │  Django WSGI    │
+└─────────────────┘     └──────────────────┘     └────────┬────────┘
+                                                           │
+                        ┌──────────────────────────────────┴────────┐
+                        │              Django Application           │
+                        │  ┌─────────────────┐  ┌────────────────┐ │
+                        │  │  Optimization   │  │     Alert      │ │
+                        │  │     Engine      │  │    System      │ │
+                        │  └────────┬────────┘  └───────┬────────┘ │
+                        └───────────┼────────────────────┼──────────┘
+                                   │                    │
+                        ┌──────────▼────────┐  ┌────────▼────────┐
+                        │    PI System      │  │     Redis       │
+                        │   (Real-time)     │  │  (Cache/Queue)  │
+                        └───────────────────┘  └─────────────────┘
+```
+
+## File Structure
+
+```
+Oxbow_Django_Optimization/
+│
+├── abay_optimization/                     # Python optimization package
+│   ├── data/                             # Static data files
+│   │   ├── OXPH_to_CFS_Rand_forest.csv
+│   │   └── OXPH_to_CFS_Rand_forest_Turned_Into_Linear_Equation.xlsx
+│   │
+│   ├── config/                           # Configuration files
+│   │   └── (PI system credentials)
+│   │
+│   ├── __init__.py
+│   ├── calculations.py                   # Core optimization calculations
+│   ├── constants.py                      # System constants and parameters
+│   ├── data_fetcher.py                  # PI System data fetching
+│   ├── linear_optimizer.py              # Linear programming optimization
+│   ├── optimizer_service.py             # Optimization service layer
+│   ├── rafting_schedules.xlsx          # Rafting schedule data
+│   └── yes_energy_grab.py              # YES Energy API integration
+│
+└── django_backend/                       # Django project
+    │
+    ├── django_backend/                   # Django settings module
+    │   ├── __init__.py
+    │   ├── asgi.py                      # ASGI configuration
+    │   ├── celery.py                    # Celery configuration
+    │   ├── settings.py                  # Django settings
+    │   ├── urls.py                      # Main URL configuration
+    │   └── wsgi.py                      # WSGI configuration
+    │
+    ├── optimization_api/                 # Main Django app
+    │   ├── management/                  # Management commands
+    │   │   └── commands/
+    │   │       ├── monitor_alerts.py   # Alert monitoring service
+    │   │       ├── migrate_alerts.py   # Alert migration utility
+    │   │       └── monitor_sqlite.py   # Database monitoring
+    │   │
+    │   ├── migrations/                  # Database migrations
+    │   ├── __init__.py
+    │   ├── admin.py                    # Django admin configuration
+    │   ├── alerting.py                  # Alert service implementation
+    │   ├── apps.py                      # App configuration
+    │   ├── auth_views.py               # Authentication views
+    │   ├── consumers.py                 # WebSocket consumers
+    │   ├── middleware.py               # Custom middleware
+    │   ├── models.py                    # Database models
+    │   ├── routing.py                   # WebSocket routing
+    │   ├── serializers.py              # DRF serializers
+    │   ├── tasks.py                     # Celery tasks
+    │   ├── urls.py                      # API URL configuration
+    │   └── views.py                     # API views
+    │
+    ├── templates/                       # HTML templates
+    │   ├── registration/
+    │   │   └── login.html              # Login page
+    │   ├── dashboard.html              # Main dashboard
+    │   └── profile.html                # User profile page
+    │
+    ├── static/                          # Static files
+    │   ├── css/
+    │   │   └── dashboard.css           # Dashboard styles
+    │   └── js/
+    │       ├── dashboard.js            # Dashboard functionality
+    │       ├── auth-alerts.js          # Authentication & alerts
+    │       └── session-manager.js      # Session management
+    │
+    ├── logs/                           # Log files directory
+    │   ├── django.log                  # Application logs
+    │   ├── alerts.log                  # Alert system logs
+    │   └── sqlite_locks.log           # Database lock monitoring
+    │
+    ├── manage.py                       # Django management script
+    ├── requirements.txt                # Python dependencies
+    ├── .env.template                   # Environment variables template
+    └── .gitignore                      # Git ignore file
+```
+
+## Prerequisites
+
+### System Requirements
+- Ubuntu 20.04 LTS or later
+- Python 3.8 or later
+- 4GB RAM minimum (8GB recommended)
+- 20GB disk space
+
+### Software Dependencies
+- PostgreSQL 12+ (recommended) or SQLite3
+- Redis server
+- Nginx
+- Git
+- Node.js (for compiling static assets if needed)
+
+## Development Setup
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/your-repo/Oxbow_Django_Optimization.git
+cd Oxbow_Django_Optimization
+```
+
+### 2. Create Virtual Environment
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### 3. Install Python Dependencies
+```bash
+pip install -r django_backend/requirements.txt
+```
+
+### 4. Configure Environment Variables
+```bash
+cd django_backend
+cp .env.template .env
+# Edit .env with your configuration
+nano .env
+```
+
+Required environment variables:
+```bash
+# Django
+SECRET_KEY=your-secret-key-here
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Database (for PostgreSQL)
+DB_NAME=abay_optimization
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_HOST=localhost
+DB_PORT=5432
+
+# Email
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
+
+# Twilio (for SMS/Voice alerts)
+TWILIO_ACCOUNT_SID=your-sid
+TWILIO_AUTH_TOKEN=your-token
+TWILIO_PHONE_NUMBER=+1234567890
+
+# YES Energy API
+YES_ENERGY_API_KEY=your-key
+YES_ENERGY_API_SECRET=your-secret
+```
+
+### 5. PI System Configuration
+Create `abay_optimization/config` file with PI System credentials:
+```ini
+[PIWEBAPI]
+username = your_pi_username
+password = your_pi_password
+url = https://your-pi-server/piwebapi
+```
+
+### 6. Database Setup
+```bash
+# Run migrations
+python manage.py makemigrations
+python manage.py migrate
+
+# Create superuser
+python manage.py createsuperuser
+
+# Load initial data (if any)
+python manage.py loaddata initial_data.json
+```
+
+### 7. Collect Static Files
+```bash
+python manage.py collectstatic --noinput
+```
+
+### 8. Run Development Server
+```bash
+# Terminal 1: Django development server
+python manage.py runserver
+
+# Terminal 2: Celery worker (for background tasks)
+celery -A django_backend worker -l info
+
+# Terminal 3: Celery beat (for scheduled tasks)
+celery -A django_backend beat -l info
+
+# Terminal 4: Alert monitoring service
+python manage.py monitor_alerts --interval 60
+```
+
+Access the application at `http://localhost:8000`
+
+## Production Deployment
+
+### 1. Server Preparation
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install required packages
+sudo apt install python3-pip python3-dev python3-venv \
+    postgresql postgresql-contrib nginx curl \
+    redis-server supervisor git -y
+
+# Install Node.js (if needed for assets)
+curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+sudo apt install nodejs -y
+```
+
+### 2. PostgreSQL Setup
+```bash
+# Access PostgreSQL
+sudo -u postgres psql
+
+# Create database and user
+CREATE DATABASE abay_optimization;
+CREATE USER abay_user WITH PASSWORD 'secure_password';
+ALTER ROLE abay_user SET client_encoding TO 'utf8';
+ALTER ROLE abay_user SET default_transaction_isolation TO 'read committed';
+ALTER ROLE abay_user SET timezone TO 'America/Los_Angeles';
+GRANT ALL PRIVILEGES ON DATABASE abay_optimization TO abay_user;
+\q
+```
+
+### 3. Application Setup
+```bash
+# Create application user
+sudo useradd -m -s /bin/bash abay
+
+# Create directories
+sudo mkdir -p /var/www/abay
+sudo mkdir -p /var/log/abay
+sudo chown -R abay:abay /var/www/abay /var/log/abay
+
+# Switch to abay user
+sudo su - abay
+
+# Clone repository
+cd /var/www/abay
+git clone https://github.com/your-repo/Oxbow_Django_Optimization.git .
+
+# Setup virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r django_backend/requirements.txt
+pip install gunicorn psycopg2-binary
+
+# Configure environment
+cd django_backend
+cp .env.template .env
+# Edit .env with production values
+nano .env
+```
+
+### 4. Django Production Settings
+Update `settings.py` for production:
+```python
+# django_backend/django_backend/settings.py
+DEBUG = False
+ALLOWED_HOSTS = ['your-domain.com', 'www.your-domain.com', 'your-server-ip']
+
+# Static files
+STATIC_ROOT = '/var/www/abay/static/'
+MEDIA_ROOT = '/var/www/abay/media/'
+
+# Security settings
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+```
+
+### 5. Run Django Setup Commands
+```bash
+# As abay user with venv activated
+cd /var/www/abay/django_backend
+python manage.py collectstatic --noinput
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+### 6. Gunicorn Configuration
+Create systemd service file:
+```bash
+sudo nano /etc/systemd/system/gunicorn.service
+```
+
+Content:
+```ini
+[Unit]
+Description=gunicorn daemon for ABAY Optimization
+Requires=gunicorn.socket
+After=network.target
+
+[Service]
+Type=notify
+User=abay
+Group=abay
+RuntimeDirectory=gunicorn
+WorkingDirectory=/var/www/abay/django_backend
+ExecStart=/var/www/abay/venv/bin/gunicorn \
+          --access-logfile /var/log/abay/gunicorn-access.log \
+          --error-logfile /var/log/abay/gunicorn-error.log \
+          --workers 3 \
+          --bind unix:/run/gunicorn.sock \
+          --timeout 120 \
+          django_backend.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create socket file:
+```bash
+sudo nano /etc/systemd/system/gunicorn.socket
+```
+
+Content:
+```ini
+[Unit]
+Description=gunicorn socket
+
+[Socket]
+ListenStream=/run/gunicorn.sock
+SocketUser=www-data
+
+[Install]
+WantedBy=sockets.target
+```
+
+Enable and start Gunicorn:
+```bash
+sudo systemctl start gunicorn.socket
+sudo systemctl enable gunicorn.socket
+sudo systemctl start gunicorn
+sudo systemctl enable gunicorn
+```
+
+### 7. Nginx Configuration
+```bash
+sudo nano /etc/nginx/sites-available/abay
+```
+
+Content:
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com www.your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com www.your-domain.com;
+
+    # SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Logging
+    access_log /var/log/nginx/abay_access.log;
+    error_log /var/log/nginx/abay_error.log;
+
+    # Static files
+    location /static/ {
+        alias /var/www/abay/static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /var/www/abay/media/;
+        expires 30d;
+    }
+
+    # WebSocket support for alerts
+    location /ws/ {
+        proxy_pass http://unix:/run/gunicorn.sock;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Django application
+    location / {
+        proxy_pass http://unix:/run/gunicorn.sock;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+}
+```
+
+Enable site:
+```bash
+sudo ln -s /etc/nginx/sites-available/abay /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+### 8. SSL Certificate (Let's Encrypt)
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+```
+
+### 9. Celery Configuration
+Create Celery service:
+```bash
+sudo nano /etc/systemd/system/celery.service
+```
+
+Content:
+```ini
+[Unit]
+Description=Celery Service for ABAY
+After=network.target
+
+[Service]
+Type=forking
+User=abay
+Group=abay
+EnvironmentFile=/etc/default/celery
+WorkingDirectory=/var/www/abay/django_backend
+ExecStart=/bin/sh -c '${CELERY_BIN} -A $CELERY_APP multi start $CELERYD_NODES \
+    --pidfile=${CELERYD_PID_FILE} \
+    --logfile=${CELERYD_LOG_FILE} \
+    --loglevel="${CELERYD_LOG_LEVEL}" $CELERYD_OPTS'
+ExecStop=/bin/sh -c '${CELERY_BIN} multi stopwait $CELERYD_NODES \
+    --pidfile=${CELERYD_PID_FILE} --loglevel="${CELERYD_LOG_LEVEL}"'
+ExecReload=/bin/sh -c '${CELERY_BIN} -A $CELERY_APP multi restart $CELERYD_NODES \
+    --pidfile=${CELERYD_PID_FILE} \
+    --logfile=${CELERYD_LOG_FILE} \
+    --loglevel="${CELERYD_LOG_LEVEL}" $CELERYD_OPTS'
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create Celery configuration:
+```bash
+sudo nano /etc/default/celery
+```
+
+Content:
+```bash
+# Names of nodes to start
+CELERYD_NODES="worker1"
+
+# Absolute path to celery command
+CELERY_BIN="/var/www/abay/venv/bin/celery"
+
+# App instance
+CELERY_APP="django_backend"
+
+# Extra command-line arguments
+CELERYD_OPTS="--time-limit=300 --concurrency=2"
+
+# Log files
+CELERYD_LOG_FILE="/var/log/abay/celery-%n%I.log"
+CELERYD_PID_FILE="/var/run/celery/%n.pid"
+
+# Log level
+CELERYD_LOG_LEVEL="INFO"
+
+# Create log and pid directories
+CELERY_CREATE_DIRS=1
+```
+
+Enable Celery:
+```bash
+sudo systemctl start celery
+sudo systemctl enable celery
+```
+
+### 10. Alert Monitoring Service
+Create alert monitor service:
+```bash
+sudo nano /etc/systemd/system/abay-alerts.service
+```
+
+Content:
+```ini
+[Unit]
+Description=ABAY Alert Monitoring Service
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=abay
+Group=abay
+WorkingDirectory=/var/www/abay/django_backend
+Environment="PATH=/var/www/abay/venv/bin"
+ExecStart=/var/www/abay/venv/bin/python manage.py monitor_alerts --interval 60
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable service:
+```bash
+sudo systemctl start abay-alerts
+sudo systemctl enable abay-alerts
+```
+
+### 11. Monitoring and Logs
+Set up log rotation:
+```bash
+sudo nano /etc/logrotate.d/abay
+```
+
+Content:
+```
+/var/log/abay/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 abay abay
+    sharedscripts
+    postrotate
+        systemctl reload gunicorn
+    endscript
+}
+```
+
+## Configuration
+
+### System Constants
+Edit `abay_optimization/constants.py` to adjust:
+- Reservoir physical parameters
+- Operational constraints
+- Rafting schedules
+- Optimization weights
+
+### Alert Categories
+Configure alerts through the web interface:
+1. **Flow Alerts**: Set upper/lower limits for R4, R11, R30 flows
+2. **Afterbay Alerts**: Elevation thresholds and float level monitoring
+3. **Rafting Alerts**: OXPH ramp timing for recreational releases
+4. **Generation Alerts**: OXPH deviation from setpoint
+
+### Email Configuration
+For Gmail, use App Passwords:
+1. Enable 2FA on your Google account
+2. Generate app-specific password
+3. Use app password in EMAIL_HOST_PASSWORD
+
+## Usage Guide
+
+### 1. Initial Login
+- Navigate to `https://your-domain.com`
+- Login with your credentials
+- Check "Remember Me" for persistent session
+
+### 2. Dashboard Overview
+The main dashboard displays:
+- **ABAY Elevation Chart**: 24-hour history + 4-day forecast
+- **OXPH Output Chart**: Historical and optimized generation schedule
+- **System Status**: Real-time values from PI System
+- **Active Alerts**: Current system alerts
+
+### 3. Running Optimization
+1. Click "Run Optimization" tab
+2. Select parameters:
+   - **Run Mode**: Forecast or Historical
+   - **Optimizer Type**: Linear Programming or Heuristic
+   - **Forecast Source**: HydroForecast or CNRFC
+3. Adjust quick parameters if needed
+4. Click "Run Optimization"
+5. Monitor progress in real-time
+
+### 4. Managing Alerts
+1. Navigate to "Alert Settings" tab
+2. Configure alerts by category:
+   - Click category headers to expand
+   - Set threshold values
+   - Save each section
+3. View alert history at bottom
+4. Configure notification preferences
+
+### 5. Viewing Electricity Prices
+1. Click "Electricity Prices" tab
+2. View current market prices
+3. Click "Calculate Revenue" to analyze generation value
+4. Optionally change node ID for different pricing points
+
+### 6. Rafting Information
+1. Check "Rafting Info" tab for:
+   - Today/tomorrow rafting schedules
+   - Required OXPH adjustment times
+   - Ramp calculator for manual adjustments
+
+### 7. Historical Analysis
+1. Select date range in "Historical Analysis" tab
+2. Click "Load Historical Data"
+3. Compare actual vs. expected performance
+
+## API Documentation
+
+### Authentication Endpoints
+```
+POST   /api/login/          - User login
+POST   /api/logout/         - User logout
+GET    /api/auth-status/    - Check authentication status
+GET    /api/profile/        - Get user profile
+PUT    /api/profile/        - Update user profile
+```
+
+### Optimization Endpoints
+```
+POST   /api/optimize/                   - Start new optimization
+GET    /api/optimization-status/{task_id}/          - Check optimization status
+GET    /api/optimization-runs/         - List optimization runs
+GET    /api/parameters/                - Get parameter sets
+POST   /api/parameters/                - Create parameter set
+```
+
+### Alert Endpoints
+```
+GET    /api/alerts/                    - List user alerts
+POST   /api/alerts/                    - Create alert
+PUT    /api/alerts/{id}/               - Update alert
+DELETE /api/alerts/{id}/               - Delete alert
+GET    /api/alerts/history/            - Get alert history
+POST   /api/alerts/{id}/test/          - Test alert
+```
+
+### Data Endpoints
+```
+GET    /api/current-state/             - Current system state
+GET    /api/electricity-prices/        - Get electricity prices
+POST   /api/price-analysis/            - Calculate revenue
+GET    /api/rafting-times/             - Get rafting schedule
+POST   /api/ramp-calculator/           - Calculate OXPH ramp time
+```
+
+## Alert System
+
+### Alert Types
+
+#### Standard Alerts
+- **Threshold-based**: Greater than, less than, between, outside range
+- **Parameters**: All PI System values (flows, elevations, power)
+- **Severities**: Info, Warning, Critical
+
+#### Special Alerts
+1. **Rafting Ramp Alerts**
+   - Monitors OXPH adjustment timing for rafting
+   - Calculates required ramp duration
+   - Alerts before ramping should begin
+
+2. **Float Level Change**
+   - Detects changes in float setpoint
+   - Configurable sensitivity threshold
+
+3. **Deviation Alerts**
+   - Monitors deviation from setpoint
+   - Useful for generation control
+
+### Notification Channels
+1. **Email**: Detailed alerts with system status
+2. **SMS**: Concise alerts via Twilio (160 char)
+3. **Voice Calls**: Critical alerts only
+4. **Browser**: Real-time WebSocket notifications
+
+### Alert Configuration
+```python
+# Example alert creation via API
+{
+    "name": "High Afterbay Level",
+    "parameter": "afterbay_elevation",
+    "condition": "greater_than",
+    "threshold_value": 1174.5,
+    "severity": "warning",
+    "category": "afterbay",
+    "email_notification": true,
+    "sms_notification": false,
+    "cooldown_minutes": 30
+}
+```
+
+## Maintenance
+
+### Regular Tasks
+
+#### Daily
+- Check system logs for errors
+- Verify alert system is active
+- Monitor disk space usage
+
+#### Weekly
+- Review SQLite lock events: `python manage.py monitor_sqlite`
+- Check optimization run success rate
+- Clear old log files if needed
+
+#### Monthly
+- Update water year type in parameters
+- Review and adjust alert thresholds
+- Database backup and optimization
+- Security updates: `sudo apt update && sudo apt upgrade`
+
+### Database Backup
+```bash
+# PostgreSQL backup
+pg_dump -U abay_user abay_optimization > backup_$(date +%Y%m%d).sql
+
+# SQLite backup (if using)
+sqlite3 /var/www/abay/django_backend/db.sqlite3 ".backup /backups/abay_$(date +%Y%m%d).db"
+```
+
+### Log Management
+Important log files:
+- `/var/log/abay/django.log` - Application logs
+- `/var/log/abay/alerts.log` - Alert system logs
+- `/var/log/abay/celery-worker1.log` - Background task logs
+- `/var/log/nginx/abay_access.log` - Web access logs
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. "Database is locked" (SQLite)
+```bash
+# Check for lock events
+python manage.py monitor_sqlite
+
+# If frequent locks, consider PostgreSQL migration
+```
+
+#### 2. Optimization Not Starting
+- Check Celery workers are running: `sudo systemctl status celery`
+- Verify Redis is active: `redis-cli ping`
+- Check logs: `/var/log/abay/celery-worker1.log`
+
+#### 3. Alerts Not Sending
+- Verify alert service: `sudo systemctl status abay-alerts`
+- Check Twilio credentials in `.env`
+- Test email configuration: `python manage.py sendtestemail`
+
+#### 4. PI System Connection Failed
+- Verify VPN connection (if required)
+- Check credentials in `abay_optimization/config`
+- Test connection: `python manage.py test_pi_connection`
+
+#### 5. Static Files Not Loading
+```bash
+python manage.py collectstatic --noinput
+sudo systemctl restart nginx
+```
+
+### Debug Mode
+For detailed debugging:
+```python
+# In .env file
+DEBUG=True
+LOG_LEVEL=DEBUG
+```
+
+### Health Checks
+```bash
+# Check all services
+sudo systemctl status gunicorn celery abay-alerts nginx redis
+
+# Application health endpoint
+curl https://your-domain.com/api/health/
+```
+
+## Contributing
+
+### Development Workflow
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/your-feature`
+3. Make changes and test thoroughly
+4. Commit with clear messages: `git commit -m "Add: description"`
+5. Push to branch: `git push origin feature/your-feature`
+6. Create Pull Request
+
+### Code Standards
+- Follow PEP 8 for Python code
+- Use meaningful variable names
+- Add docstrings to functions
+- Include unit tests for new features
+- Update documentation as needed
+
+### Testing
+```bash
+# Run unit tests
+python manage.py test
+
+# Run specific test
+python manage.py test optimization_api.tests.test_alerts
+
+# Check code coverage
+coverage run --source='.' manage.py test
+coverage report
+```
+
+## Security Considerations
+
+### Best Practices
+1. Keep all dependencies updated
+2. Use strong passwords for all accounts
+3. Enable 2FA where possible
+4. Regularly review user access
+5. Monitor logs for suspicious activity
+6. Use HTTPS for all connections
+7. Implement rate limiting for APIs
+8. Regular security audits
+
+### Sensitive Data
+Never commit to version control:
+- `.env` files
+- PI System credentials
+- API keys
+- Database passwords
+- SSL certificates
+
+## License
+
+This project is proprietary software. All rights reserved.
+
+## Support
+
+For issues or questions:
+- Check logs first
+- Review troubleshooting guide
+- Contact system administrator
+- Submit issue on GitHub (internal)
+
+---
+
+**Version**: 1.0.0
+**Last Updated**: December 2024
+**Maintained By**: ABAY Optimization Team
