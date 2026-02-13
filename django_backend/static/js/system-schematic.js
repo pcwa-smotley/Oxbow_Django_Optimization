@@ -144,6 +144,19 @@
     wrapper.innerHTML = '';
     wrapper.appendChild(svg);
 
+    // Drill-down click handlers on each node
+    var clickableNodes = svg.querySelectorAll('[data-node]');
+    for (var ni = 0; ni < clickableNodes.length; ni++) {
+      (function (node) {
+        node.addEventListener('click', function () {
+          var key = node.getAttribute('data-node');
+          if (key && typeof window.openSchematicDrillDown === 'function') {
+            window.openSchematicDrillDown(key);
+          }
+        });
+      })(clickableNodes[ni]);
+    }
+
     // Start animation
     startParticleAnimation();
   }

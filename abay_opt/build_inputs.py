@@ -92,20 +92,21 @@ def build_inputs(horizon_hours: int = 24,
         r26_last = float(last_vals['R26_Flow'])
         float_last = float(last_vals['Afterbay_Elevation_Setpoint'])
 
-        # Try DA awards first, fall back to persistence
+        # Build persistence baseline first (always needed as fallback)
+        persist_raw = lookback['MFP_Total_Gen_GEN_MDFK_and_RA'].tail(horizon_hours)
+        if persist_raw.shape[0] < horizon_hours:
+            add = horizon_hours - persist_raw.shape[0]
+            add_idx = idx_forecast[persist_raw.shape[0]:]
+            persist_raw = pd.concat([persist_raw, pd.Series([persist_raw.iloc[-1]] * add, index=add_idx)])
+        persist_raw.index = idx_forecast
+
+        # Try DA awards — use for covered hours, fill gaps with persistence
         da_series, mfra_source = get_da_awards_for_forecast(idx_forecast)
-        if da_series is not None and da_series.notna().sum() >= len(idx_forecast) * 0.5:
-            mfra_hist = da_series.reindex(idx_forecast).ffill().bfill()
+        if da_series is not None and da_series.notna().any():
+            mfra_hist = da_series.reindex(idx_forecast).fillna(persist_raw)
         else:
             mfra_source = 'persistence'
-            mfra_hist = lookback['MFP_Total_Gen_GEN_MDFK_and_RA'].tail(horizon_hours)
-            if mfra_hist.shape[0] < horizon_hours:
-                add = horizon_hours - mfra_hist.shape[0]
-                add_idx = idx_forecast[mfra_hist.shape[0]:]
-                mfra_hist = pd.concat([mfra_hist, pd.Series([mfra_hist.iloc[-1]] * add, index=add_idx)])
-                mfra_hist.index = idx_forecast
-            else:
-                mfra_hist.index = idx_forecast
+            mfra_hist = persist_raw
 
         def fill_or_hold(colname: str, last_value: float) -> pd.Series:
             if not r4r30.empty and colname in r4r30.columns:

@@ -171,22 +171,28 @@ def get_da_awards_for_forecast(forecast_index: pd.DatetimeIndex) -> Tuple[Option
             return None, 'persistence'
 
         # Build a Series from stored summaries
-        data = {
-            pd.Timestamp(s.interval_start_utc, tz='UTC'): s.total_mw
-            for s in summaries
-        }
+        # Django DateTimeField values are already tz-aware; avoid double-tz error
+        data = {}
+        for s in summaries:
+            ts = pd.Timestamp(s.interval_start_utc)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize('UTC')
+            data[ts] = s.total_mw
         da_series = pd.Series(data, name='MFRA_MW_forecast').sort_index()
 
-        # Check coverage: need at least 50% of forecast hours covered
+        # Align to forecast index; return whatever hours we have.
+        # DA awards typically cover only 24 h but the forecast may be 72 h,
+        # so we return partial coverage and let build_inputs fill the gaps.
         aligned = da_series.reindex(forecast_index, method='nearest', tolerance='30min')
-        coverage = aligned.notna().sum() / len(forecast_index)
+        covered = int(aligned.notna().sum())
+        coverage = covered / len(forecast_index)
 
-        if coverage < 0.5:
-            logger.info(f"DA awards coverage too low ({coverage:.0%}), using persistence")
+        if covered == 0:
+            logger.info("No DA awards align with forecast window")
             return None, 'persistence'
 
         logger.info(f"Using stored DA awards for MFRA forecast ({coverage:.0%} coverage, "
-                     f"{aligned.notna().sum()}/{len(forecast_index)} hours)")
+                     f"{covered}/{len(forecast_index)} hours)")
         return aligned, 'da_awards'
 
     except (ImportError, OperationalError, ProgrammingError) as e:

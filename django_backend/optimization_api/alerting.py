@@ -19,7 +19,10 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.contrib.auth.models import User
-from channels.layers import get_channel_layer
+try:
+    from channels.layers import get_channel_layer
+except ImportError:
+    get_channel_layer = lambda: None
 from asgiref.sync import async_to_sync
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioException

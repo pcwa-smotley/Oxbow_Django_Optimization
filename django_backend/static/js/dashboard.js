@@ -1226,6 +1226,11 @@ function initializeCharts() {
   if (typeof registerChartReinit === 'function' && !window._mainChartsRegistered) {
     registerChartReinit(function () {
       chartsConnected = false;
+      // Dispose drill-down chart if open during theme switch
+      if (schematicDrillDownChart) {
+        schematicDrillDownChart.dispose();
+        schematicDrillDownChart = null;
+      }
       initializeCharts();
       if (latestChartData) {
         applyElevationChartData(latestChartData);
@@ -1266,84 +1271,209 @@ function initGaugeWidgets() {
   gaugeRevenue = initEChart('gaugeRevenue');
   gaugeConfidence = initEChart('gaugeConfidence');
 
-  function makeGaugeOption(min, max, value, unit, colorStops) {
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var trackColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  var detailColor = isDark ? '#e2e8f0' : '#1e293b';
+
+  // Helper: pick arc color based on normalized value and color stops
+  function arcColorForValue(pct, colorStops) {
+    for (var i = 0; i < colorStops.length; i++) {
+      if (pct <= colorStops[i][0]) return colorStops[i][1];
+    }
+    return colorStops[colorStops.length - 1][1];
+  }
+
+  // Modern radial arc gauge — no pointer, no ticks, clean progress ring
+  function makeGaugeOption(min, max, value, unit, colorStops, fmtFn) {
+    var pct = max > min ? (value - min) / (max - min) : 0;
+    var activeColor = arcColorForValue(pct, colorStops);
     return {
-      series: [{
-        type: 'gauge',
-        min: min,
-        max: max,
-        progress: { show: true, width: 10 },
-        axisLine: { lineStyle: { width: 10, color: colorStops } },
-        axisTick: { show: false },
-        splitLine: { length: 8, lineStyle: { width: 1 } },
-        axisLabel: { distance: 18, fontSize: 9 },
-        pointer: { length: '55%', width: 4, itemStyle: { color: 'auto' } },
-        anchor: { show: true, size: 10, itemStyle: { borderWidth: 2 } },
-        title: { show: false },
-        detail: {
-          valueAnimation: true,
-          fontSize: 18,
-          fontWeight: 700,
-          offsetCenter: [0, '70%'],
-          formatter: function (v) { return v.toFixed(1) + ' ' + unit; }
+      series: [
+        // Background track ring
+        {
+          type: 'gauge',
+          center: ['50%', '58%'],
+          radius: '90%',
+          startAngle: 220,
+          endAngle: -40,
+          min: min, max: max,
+          pointer: { show: false },
+          progress: { show: false },
+          axisLine: { lineStyle: { width: 14, color: [[1, trackColor]], roundCap: true } },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          title: { show: false },
+          detail: { show: false },
+          data: [{ value: value }]
         },
-        data: [{ value: value }]
-      }]
+        // Active progress arc
+        {
+          type: 'gauge',
+          center: ['50%', '58%'],
+          radius: '90%',
+          startAngle: 220,
+          endAngle: -40,
+          min: min, max: max,
+          pointer: { show: false },
+          progress: {
+            show: true,
+            width: 14,
+            roundCap: true,
+            itemStyle: { color: activeColor }
+          },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          title: { show: false },
+          detail: {
+            valueAnimation: true,
+            fontSize: 20,
+            fontWeight: 700,
+            fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
+            color: detailColor,
+            offsetCenter: [0, '8%'],
+            formatter: fmtFn || function (v) { return v.toFixed(1) + ' ' + unit; }
+          },
+          data: [{ value: value }],
+          // Store metadata for dynamic color updates
+          _colorStops: colorStops,
+          _min: min,
+          _max: max
+        }
+      ]
     };
   }
 
+  // Color stops: [normalizedPosition, color]
+  // Elevation gauge uses a custom rich-text formatter for trend arrow
   if (gaugeElevation) {
-    gaugeElevation.setOption(makeGaugeOption(1166, 1175, 1170, 'ft', [
-      [0.22, '#ff006e'], [0.33, '#ffbe0b'], [0.78, '#00ff88'], [0.89, '#ffbe0b'], [1, '#ff006e']
-    ]));
+    var elevOpt = makeGaugeOption(1166, 1175, 1170, 'ft', [
+      [0.22, '#ef4444'], [0.33, '#f59e0b'], [0.78, '#10b981'], [0.89, '#f59e0b'], [1, '#ef4444']
+    ]);
+    // Override detail with rich text support for trend indicator
+    elevOpt.series[1].detail = {
+      valueAnimation: true,
+      fontSize: 20,
+      fontWeight: 700,
+      fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
+      offsetCenter: [0, '2%'],
+      rich: {
+        val: { fontSize: 20, fontWeight: 700, color: detailColor },
+        unit: { fontSize: 13, fontWeight: 400, color: isDark ? '#94a3b8' : '#64748b', padding: [0, 0, 0, 2] },
+        up: { fontSize: 12, fontWeight: 600, color: '#10b981', padding: [4, 0, 0, 0] },
+        down: { fontSize: 12, fontWeight: 600, color: '#ef4444', padding: [4, 0, 0, 0] },
+        flat: { fontSize: 12, fontWeight: 600, color: isDark ? '#64748b' : '#94a3b8', padding: [4, 0, 0, 0] }
+      },
+      formatter: function (v) {
+        return '{val|' + v.toFixed(1) + '}{unit| ft}\n{flat|―  0.0 ft/hr}';
+      }
+    };
+    gaugeElevation.setOption(elevOpt);
   }
 
   if (gaugeOXPH) {
     gaugeOXPH.setOption(makeGaugeOption(0, 6, 0, 'MW', [
-      [0.15, '#ffbe0b'], [0.85, '#00ff88'], [1, '#ff006e']
+      [0.15, '#f59e0b'], [0.85, '#10b981'], [1, '#ef4444']
     ]));
   }
 
   if (gaugeSpillRisk) {
     gaugeSpillRisk.setOption(makeGaugeOption(0, 100, 0, '%', [
-      [0.5, '#00ff88'], [0.8, '#ffbe0b'], [1, '#ff006e']
+      [0.5, '#10b981'], [0.8, '#f59e0b'], [1, '#ef4444']
     ]));
   }
 
   if (gaugeRevenue) {
-    var revOpt = makeGaugeOption(0, 500, 0, '$/hr', [
-      [0.3, '#ffbe0b'], [1, '#00ff88']
-    ]);
-    revOpt.series[0].detail.formatter = function (v) { return '$' + Math.round(v); };
-    gaugeRevenue.setOption(revOpt);
+    gaugeRevenue.setOption(makeGaugeOption(0, 500, 0, '$/hr', [
+      [0.3, '#f59e0b'], [1, '#10b981']
+    ], function (v) { return '$' + Math.round(v); }));
   }
 
   if (gaugeConfidence) {
     gaugeConfidence.setOption(makeGaugeOption(0, 100, 85, '%', [
-      [0.4, '#ff006e'], [0.7, '#ffbe0b'], [1, '#00ff88']
+      [0.4, '#ef4444'], [0.7, '#f59e0b'], [1, '#10b981']
     ]));
   }
+}
+
+function _updateGauge(chart, value) {
+  if (!chart) return;
+  var opt = chart.getOption();
+  // series[1] is the active progress arc
+  var meta = opt.series[1] || {};
+  var stops = meta._colorStops;
+  var gMin = meta._min != null ? meta._min : (meta.min || 0);
+  var gMax = meta._max != null ? meta._max : (meta.max || 100);
+  var pct = gMax > gMin ? (value - gMin) / (gMax - gMin) : 0;
+  pct = Math.max(0, Math.min(1, pct));
+
+  var color = undefined;
+  if (stops && stops.length) {
+    for (var i = 0; i < stops.length; i++) {
+      if (pct <= stops[i][0]) { color = stops[i][1]; break; }
+    }
+    if (!color) color = stops[stops.length - 1][1];
+  }
+
+  var update = {
+    series: [
+      { data: [{ value: value }] },
+      { data: [{ value: value }] }
+    ]
+  };
+  if (color) {
+    update.series[1].progress = { itemStyle: { color: color } };
+  }
+  chart.setOption(update);
 }
 
 function updateGaugeWidgets(data) {
   if (!data) return;
   if (gaugeElevation && data.elevation != null) {
-    gaugeElevation.setOption({ series: [{ data: [{ value: parseFloat(data.elevation) }] }] });
+    var elVal = parseFloat(data.elevation);
+    var delta = data.elevDelta;
+    // Update arc color + value via generic helper
+    _updateGauge(gaugeElevation, elVal);
+    // Update the rich-text detail with trend arrow
+    var trendTag, trendText;
+    if (delta != null && Math.abs(delta) >= 0.01) {
+      if (delta > 0) {
+        trendTag = 'up';
+        trendText = '\u25B2  +' + delta.toFixed(1) + ' ft/hr';
+      } else {
+        trendTag = 'down';
+        trendText = '\u25BC  ' + delta.toFixed(1) + ' ft/hr';
+      }
+    } else {
+      trendTag = 'flat';
+      trendText = '\u2014  0.0 ft/hr';
+    }
+    gaugeElevation.setOption({
+      series: [{}, {
+        detail: {
+          formatter: function (v) {
+            return '{val|' + v.toFixed(1) + '}{unit| ft}\n{' + trendTag + '|' + trendText + '}';
+          }
+        }
+      }]
+    });
   }
   if (gaugeOXPH && data.oxph != null) {
-    gaugeOXPH.setOption({ series: [{ data: [{ value: parseFloat(data.oxph) }] }] });
+    _updateGauge(gaugeOXPH, parseFloat(data.oxph));
   }
   if (gaugeSpillRisk && data.elevation != null) {
     var elev = parseFloat(data.elevation);
     var risk = Math.max(0, Math.min(100, ((elev - 1172) / 3) * 100));
-    gaugeSpillRisk.setOption({ series: [{ data: [{ value: Math.round(risk) }] }] });
+    _updateGauge(gaugeSpillRisk, Math.round(risk));
   }
   if (gaugeRevenue && data.oxph != null && data.price != null) {
     var rev = parseFloat(data.oxph) * parseFloat(data.price);
-    gaugeRevenue.setOption({ series: [{ data: [{ value: rev }] }] });
+    _updateGauge(gaugeRevenue, rev);
   }
   if (gaugeConfidence && data.biasConfidence != null) {
-    gaugeConfidence.setOption({ series: [{ data: [{ value: parseFloat(data.biasConfidence) }] }] });
+    _updateGauge(gaugeConfidence, parseFloat(data.biasConfidence));
   }
 }
 
@@ -1645,22 +1775,30 @@ function applyElevationChartData(chartData, animationMode = "default") {
   updateBiasLegendLabel(currentBiasValue);
 
   // Update status bar and gauges with latest values
-  var lastActualElev = null, lastOxph = null;
+  var lastActualElev = null, prevActualElev = null;
   if (actual.length) {
-    for (var i = actual.length - 1; i >= 0; i--) {
-      if (actual[i] != null) { lastActualElev = actual[i]; break; }
+    // Find last two non-null actual elevations for delta computation
+    var found = 0;
+    for (var i = actual.length - 1; i >= 0 && found < 2; i--) {
+      if (actual[i] != null) {
+        if (found === 0) lastActualElev = actual[i];
+        else prevActualElev = actual[i];
+        found++;
+      }
     }
   }
+  var elevDelta = (lastActualElev != null && prevActualElev != null)
+    ? lastActualElev - prevActualElev : null;
   if (typeof updateStatusBar === 'function') {
     updateStatusBar({ elevation: lastActualElev });
   }
   if (typeof updateSchematicData === 'function') {
     updateSchematicData({ elevation: lastActualElev });
   }
-  updateGaugeWidgets({ elevation: lastActualElev });
+  updateGaugeWidgets({ elevation: lastActualElev, elevDelta: elevDelta });
 
   // Update 7-day timeline
-  updateTimeline(data);
+  updateTimeline(chartData);
 }
 
 function renderPowerChartLegend(seriesList) {
@@ -1716,7 +1854,7 @@ function refreshPowerChart(animationMode = "default") {
   const chartTitleEl = document.getElementById("powerChartTitle");
 
   if (!labels.length) {
-    oxphChart.setOption({ xAxis: { data: [] }, series: [] }, { notMerge: true });
+    oxphChart.setOption({ tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, xAxis: { data: [] }, series: [] }, { notMerge: true });
     renderPowerChartLegend([]);
     if (chartTitleEl) chartTitleEl.textContent = "Power Output";
     return;
@@ -1765,17 +1903,26 @@ function refreshPowerChart(animationMode = "default") {
     seriesList.push(makeSeries("Optimized Schedule", latestChartData?.oxph?.optimized, "#9b59b6", { width: 3, step: true }));
     if (chartTitleEl) chartTitleEl.textContent = "OXPH Output (24h + 4 Day Forecast)";
 
-    // Update OXPH status and schematic
+    // Update OXPH status and schematic with latest actual (not first forecast)
+    var oxphHist = latestChartData?.oxph?.historical;
     var oxphOpt = latestChartData?.oxph?.optimized;
-    if (Array.isArray(oxphOpt)) {
-      for (var i = 0; i < oxphOpt.length; i++) {
-        if (oxphOpt[i] != null) {
-          if (typeof updateStatusBar === 'function') updateStatusBar({ oxph: oxphOpt[i] });
-          if (typeof updateSchematicData === 'function') updateSchematicData({ oxph: oxphOpt[i] });
-          updateGaugeWidgets({ oxph: oxphOpt[i] });
-          break;
-        }
+    var lastOxphVal = null;
+    // Prefer last actual reading
+    if (Array.isArray(oxphHist)) {
+      for (var i = oxphHist.length - 1; i >= 0; i--) {
+        if (oxphHist[i] != null) { lastOxphVal = oxphHist[i]; break; }
       }
+    }
+    // Fall back to first optimized value if no actuals
+    if (lastOxphVal == null && Array.isArray(oxphOpt)) {
+      for (var i = 0; i < oxphOpt.length; i++) {
+        if (oxphOpt[i] != null) { lastOxphVal = oxphOpt[i]; break; }
+      }
+    }
+    if (lastOxphVal != null) {
+      if (typeof updateStatusBar === 'function') updateStatusBar({ oxph: lastOxphVal });
+      if (typeof updateSchematicData === 'function') updateSchematicData({ oxph: lastOxphVal });
+      updateGaugeWidgets({ oxph: lastOxphVal });
     }
   }
 
@@ -1788,7 +1935,18 @@ function refreshPowerChart(animationMode = "default") {
     s.data.forEach(function (v) { if (v != null && Number.isFinite(v)) allVals.push(v); });
   });
   var yMin = allVals.length ? Math.min(0, Math.min.apply(null, allVals) * 0.95) : 0;
-  var yMax = allVals.length ? Math.max.apply(null, allVals) * 1.1 : undefined;
+  var yMax = allVals.length ? Math.ceil(Math.max.apply(null, allVals) * 1.1 * 10) / 10 : undefined;
+
+  // Rounding helpers per view mode
+  var isRiver = powerChartMode === "river";
+  var isMfra = powerChartMode === "mfra";
+  // OXPH: 1 decimal, MFRA: integer MW, River: integer CFS
+  var unitLabel = isRiver ? ' CFS' : ' MW';
+  function fmtVal(v) {
+    if (v == null || !Number.isFinite(v)) return '–';
+    if (isRiver || isMfra) return Math.round(v) + unitLabel;
+    return v.toFixed(1) + unitLabel;
+  }
 
   // Add day dividers to first series
   var dividers = buildDayDividers(labels);
@@ -1797,8 +1955,26 @@ function refreshPowerChart(animationMode = "default") {
   }
 
   oxphChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      formatter: function (params) {
+        if (!params || !params.length) return '';
+        var header = params[0].axisValueLabel || '';
+        var lines = [header];
+        params.forEach(function (p) {
+          if (p.value != null) {
+            lines.push(p.marker + ' ' + p.seriesName + ': <b>' + fmtVal(p.value) + '</b>');
+          }
+        });
+        return lines.join('<br/>');
+      }
+    },
     xAxis: { data: labels },
-    yAxis: { name: yLabel, min: yMin, max: yMax },
+    yAxis: {
+      name: yLabel, min: yMin, max: yMax,
+      axisLabel: { formatter: function (v) { return isRiver || isMfra ? Math.round(v) : v.toFixed(1); } }
+    },
     legend: { show: false },
     series: filtered
   }, { notMerge: true, lazyUpdate: animationMode === 'none' });
@@ -4115,6 +4291,19 @@ function updateForecastTableWithData(forecastDataArray) {
   updateForecastTable();
   updateNextSetpointCard(forecastData);
   markForecastDirty(false);
+
+  // Update live system schematic with current values from first data row
+  if (typeof updateSchematicData === 'function' && forecastData.length) {
+    const row = forecastData[0];
+    updateSchematicData({
+      mfra: row.mfraActual ?? row.mfra ?? null,
+      r30: row.r30Actual ?? row.r30 ?? null,
+      r4: row.r4Actual ?? row.r4 ?? null,
+      elevation: row.abayElevation ?? row.elevation ?? null,
+      oxph: row.oxphActual ?? row.oxph ?? null,
+      spill: 0,
+    });
+  }
 }
 
 function updateNextSetpointCard(data) {
@@ -5019,6 +5208,274 @@ function closeRunOptimizationModal() {
     }
 }
 
+// ==========================================
+// SCHEMATIC DRILL-DOWN MODAL
+// ==========================================
+
+let schematicDrillDownChart = null;
+
+var SCHEMATIC_DRILL_DOWN_CONFIG = {
+  oxph: {
+    title: 'OXPH Output',
+    unit: 'MW',
+    yAxisName: 'Power Output (MW)',
+    yMin: 0,
+    getSeries: function (d) {
+      return [
+        { name: 'Historical', data: d.oxph.historical, color: '#27ae60', dash: false },
+        { name: 'Optimized Schedule', data: d.oxph.optimized, color: '#9b59b6', dash: true }
+      ];
+    },
+    getCurrent: function (d) {
+      var h = d.oxph.historical;
+      if (!Array.isArray(h)) return null;
+      for (var i = h.length - 1; i >= 0; i--) { if (h[i] != null) return h[i]; }
+      return null;
+    }
+  },
+  abay: {
+    title: 'ABAY Elevation',
+    unit: 'ft',
+    yAxisName: 'Elevation (ft)',
+    yMin: 1166,
+    getSeries: function (d) {
+      return [
+        { name: 'Actual', data: d.elevation.actual, color: '#e74c3c', dash: false },
+        { name: 'Optimized Forecast', data: d.elevation.optimized, color: '#3498db', dash: true },
+        { name: 'Float Level', data: d.elevation.float, color: '#dc3545', dash: [10, 5] }
+      ];
+    },
+    getCurrent: function (d) {
+      var a = d.elevation.actual;
+      if (!Array.isArray(a)) return null;
+      for (var i = a.length - 1; i >= 0; i--) { if (a[i] != null) return a[i]; }
+      return null;
+    }
+  },
+  mfra: {
+    title: 'MFRA Generation',
+    unit: 'MW',
+    yAxisName: 'Power Output (MW)',
+    yMin: 0,
+    getSeries: function (d) {
+      return [
+        { name: 'Historical', data: d.mfra.historical, color: '#2980b9', dash: false },
+        { name: 'Forecast', data: d.mfra.forecast, color: '#e67e22', dash: true }
+      ];
+    },
+    getCurrent: function (d) {
+      var h = d.mfra.historical;
+      if (!Array.isArray(h)) return null;
+      for (var i = h.length - 1; i >= 0; i--) { if (h[i] != null) return h[i]; }
+      return null;
+    }
+  },
+  r4: {
+    title: 'R4 River Flow',
+    unit: 'CFS',
+    yAxisName: 'Flow (CFS)',
+    yMin: 0,
+    getSeries: function (d) {
+      return [
+        { name: 'Observed', data: d.river.r4.actual, color: '#1abc9c', dash: false },
+        { name: 'HydroForecast', data: d.river.r4.hydro, color: '#16a085', dash: true },
+        { name: 'CNRFC', data: d.river.r4.cnrfc, color: '#48c9b0', dash: [4, 4] }
+      ];
+    },
+    getCurrent: function (d) {
+      var a = d.river.r4.actual;
+      if (!Array.isArray(a)) return null;
+      for (var i = a.length - 1; i >= 0; i--) { if (a[i] != null) return a[i]; }
+      return null;
+    }
+  },
+  r30: {
+    title: 'R30 River Flow',
+    unit: 'CFS',
+    yAxisName: 'Flow (CFS)',
+    yMin: 0,
+    getSeries: function (d) {
+      return [
+        { name: 'Observed', data: d.river.r30.actual, color: '#e67e22', dash: false },
+        { name: 'HydroForecast', data: d.river.r30.hydro, color: '#d35400', dash: true },
+        { name: 'CNRFC', data: d.river.r30.cnrfc, color: '#f1c40f', dash: [4, 4] }
+      ];
+    },
+    getCurrent: function (d) {
+      var a = d.river.r30.actual;
+      if (!Array.isArray(a)) return null;
+      for (var i = a.length - 1; i >= 0; i--) { if (a[i] != null) return a[i]; }
+      return null;
+    }
+  },
+  downstream: {
+    title: 'Spillway',
+    unit: 'CFS',
+    yAxisName: 'Flow (CFS)',
+    yMin: 0,
+    getSeries: function () { return []; },
+    getCurrent: function () { return null; }
+  }
+};
+
+window.openSchematicDrillDown = function (nodeKey) {
+  if (!latestChartData) return;
+  var config = SCHEMATIC_DRILL_DOWN_CONFIG[nodeKey];
+  if (!config) return;
+
+  var seriesDefs = config.getSeries(latestChartData);
+  var hasData = seriesDefs.some(function (s) { return hasChartValues(s.data); });
+  if (!hasData) {
+    if (typeof showNotification === 'function') {
+      showNotification('No time series data available for ' + config.title, 'info');
+    }
+    return;
+  }
+
+  var modal = document.getElementById('schematicDrillDownModal');
+  var backdrop = document.getElementById('schematicDrillDownBackdrop');
+  var titleEl = document.getElementById('schematicDrillDownTitle');
+  if (!modal || !backdrop) return;
+
+  // Title with current value
+  var cur = config.getCurrent(latestChartData);
+  var titleText = config.title;
+  if (cur != null) {
+    titleText += ' \u2014 ' + (Number.isInteger(cur) ? cur : parseFloat(cur).toFixed(1)) + ' ' + config.unit;
+  }
+  if (titleEl) titleEl.textContent = titleText;
+
+  // Show modal
+  backdrop.classList.remove('hidden');
+  modal.classList.remove('hidden');
+  modal.offsetHeight; // reflow for transition
+  backdrop.classList.add('active');
+  modal.classList.add('active');
+
+  backdrop.onclick = function () { closeSchematicDrillDown(); };
+
+  var escHandler = function (e) {
+    if (e.key === 'Escape') {
+      closeSchematicDrillDown();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+
+  _buildDrillDownChart(config, seriesDefs);
+};
+
+window.closeSchematicDrillDown = function () {
+  var modal = document.getElementById('schematicDrillDownModal');
+  var backdrop = document.getElementById('schematicDrillDownBackdrop');
+  if (modal) { modal.classList.add('hidden'); modal.classList.remove('active'); }
+  if (backdrop) { backdrop.classList.add('hidden'); backdrop.classList.remove('active'); }
+  if (schematicDrillDownChart) {
+    schematicDrillDownChart.dispose();
+    schematicDrillDownChart = null;
+  }
+};
+
+function _buildDrillDownChart(config, seriesDefs) {
+  if (schematicDrillDownChart) {
+    schematicDrillDownChart.dispose();
+    schematicDrillDownChart = null;
+  }
+
+  schematicDrillDownChart = initEChart('schematicDrillDownChart');
+  if (!schematicDrillDownChart) return;
+
+  var labels = latestChartData.labels || [];
+  var labelCount = labels.length;
+  var actualMask = latestChartData.actual_mask || [];
+
+  // Find actual/forecast boundary
+  var boundaryIdx = -1;
+  for (var i = actualMask.length - 1; i >= 0; i--) {
+    if (actualMask[i] === true) { boundaryIdx = i; break; }
+  }
+
+  var echartsSeries = [];
+  seriesDefs.forEach(function (def, idx) {
+    var s = {
+      name: def.name,
+      type: 'line',
+      data: alignSeriesToLabels(def.data, labelCount),
+      itemStyle: { color: def.color },
+      lineStyle: {
+        width: 2,
+        type: def.dash === true ? 'dashed' : (Array.isArray(def.dash) ? def.dash : 'solid')
+      },
+      symbol: 'none',
+      smooth: false,
+      connectNulls: false
+    };
+
+    // "Now" markLine on first series
+    if (idx === 0 && boundaryIdx >= 0) {
+      s.markLine = {
+        silent: true,
+        symbol: 'none',
+        label: { show: true, position: 'insideEndTop', formatter: 'Now', fontSize: 10 },
+        lineStyle: { color: '#ff006e', width: 2, type: 'dashed' },
+        data: [{ xAxis: boundaryIdx }]
+      };
+    }
+    echartsSeries.push(s);
+  });
+
+  // Add day dividers to first series
+  var dividers = buildDayDividers(labels);
+  if (echartsSeries.length && dividers.length) {
+    var ml = echartsSeries[0].markLine;
+    if (ml) {
+      ml.data = ml.data.concat(dividers);
+    } else {
+      echartsSeries[0].markLine = { silent: true, symbol: 'none', label: { show: false }, data: dividers };
+    }
+  }
+
+  // Y bounds
+  var allVals = [];
+  echartsSeries.forEach(function (s) {
+    s.data.forEach(function (v) { if (v != null && Number.isFinite(v)) allVals.push(v); });
+  });
+  var yMin = config.yMin != null ? config.yMin : 0;
+  var yMax = allVals.length ? Math.ceil(Math.max.apply(null, allVals) * 1.08) : undefined;
+
+  schematicDrillDownChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    legend: { show: true, bottom: 30, textStyle: { fontSize: 11 } },
+    grid: { left: 55, right: 20, top: 25, bottom: 75 },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: {
+        rotate: 40,
+        interval: function (index) { return index % 6 === 0; },
+        fontSize: 10
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: config.yAxisName,
+      min: yMin,
+      max: yMax,
+      nameTextStyle: { fontSize: 11 }
+    },
+    dataZoom: [
+      { type: 'slider', xAxisIndex: 0, start: 0, end: 100, height: 18, bottom: 5 },
+      { type: 'inside', xAxisIndex: 0 }
+    ],
+    series: echartsSeries
+  });
+
+  // Resize after modal transition completes
+  setTimeout(function () {
+    if (schematicDrillDownChart) schematicDrillDownChart.resize();
+  }, 350);
+}
+
 function toggleModalHistoricalDate() {
     const runMode = document.getElementById('modal_runMode');
     const dateGroup = document.getElementById('modal_historicalDateGroup');
@@ -5103,7 +5560,7 @@ function fetchCAISODAAwards() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRFToken(),
+            'X-CSRFToken': getCsrfToken(),
         },
         body: JSON.stringify({}),
     })

@@ -1,8 +1,12 @@
 # django_backend/abay_web/settings.py
 
+import mimetypes
 import os
 from pathlib import Path
 import configparser
+
+mimetypes.add_type('text/css', '.css')
+mimetypes.add_type('application/javascript', '.js')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -272,6 +276,11 @@ LOGGING = {
         'optimization_api': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'abay_opt': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
             'propagate': False,
         },
         # Add SQLite backend logging

@@ -267,6 +267,56 @@ body {
     color: var(--text-primary);
 }
 
+.top-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.theme-toggle-btn {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all 0.25s ease;
+}
+
+.theme-toggle-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+}
+
+/* In light mode: show moon icon (click to go dark), hide sun */
+.theme-toggle-btn .icon-sun {
+    display: none;
+}
+.theme-toggle-btn .icon-moon {
+    display: block;
+}
+
+/* In dark mode: show sun icon (click to go light), hide moon */
+[data-theme="dark"] .theme-toggle-btn {
+    border-color: rgba(0, 212, 255, 0.2);
+    color: var(--accent-cyan);
+}
+[data-theme="dark"] .theme-toggle-btn:hover {
+    background: rgba(0, 212, 255, 0.1);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+}
+[data-theme="dark"] .theme-toggle-btn .icon-sun {
+    display: block;
+}
+[data-theme="dark"] .theme-toggle-btn .icon-moon {
+    display: none;
+}
+
 .mobile-menu-btn {
     display: none;
     background: none;
@@ -736,7 +786,7 @@ body {
    ============================================ */
 .kpi-gauge-strip {
     display: flex;
-    gap: 16px;
+    gap: 14px;
     margin-bottom: 20px;
     padding: 0;
     overflow-x: auto;
@@ -749,38 +799,40 @@ body {
 
 .kpi-gauge-card {
     flex: 1;
-    min-width: 180px;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(12px);
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    padding: 16px;
+    min-width: 160px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px);
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 12px 10px 14px;
     text-align: center;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .kpi-gauge-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
 }
 
 .kpi-gauge-chart {
     width: 100%;
-    height: 140px;
+    height: 130px;
 }
 
 .kpi-gauge-label {
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     color: var(--text-secondary);
-    font-weight: 500;
-    margin-top: 8px;
+    font-weight: 600;
+    margin-top: 2px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
 }
 
 [data-theme="dark"] .kpi-gauge-card {
     background: var(--bg-card);
     border-color: var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="dark"] .kpi-gauge-card:hover {
@@ -832,11 +884,12 @@ body {
 
 .schematic-node {
     cursor: pointer;
-    transition: filter 0.3s ease;
+    transition: filter 0.2s ease, transform 0.15s ease;
 }
 
 .schematic-node:hover {
-    filter: brightness(1.2);
+    filter: brightness(1.15) drop-shadow(0 0 6px rgba(0, 180, 230, 0.35));
+    transform: scale(1.03);
 }
 
 .schematic-data-label {
@@ -1572,6 +1625,15 @@ body {
 
 .warning-modal {
     max-width: 420px;
+}
+
+.schematic-drilldown-modal {
+    max-width: 720px;
+    width: 95%;
+}
+
+.schematic-drilldown-modal .modal-body {
+    padding: 0;
 }
 
 .modal.hidden,
