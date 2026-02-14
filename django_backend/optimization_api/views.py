@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import logging
+import re
 from copy import deepcopy
 from datetime import datetime, timedelta, time, date
 from pathlib import Path
@@ -1523,6 +1524,8 @@ def _prepare_chart_data(run, results_df=None):
             if key in row.index:
                 value = row.get(key)
                 if value is not None and not pd.isna(value):
+                    if isinstance(value, str) and value.strip() == '':
+                        continue
                     return value
         return None
 
@@ -1540,8 +1543,16 @@ def _prepare_chart_data(run, results_df=None):
             oxph_forecast_raw = oxph_actual_raw
         oxph_forecast = safe_float(oxph_forecast_raw)
         oxph_actual = safe_float(oxph_actual_raw)
-        oxph_setpoint_raw = row.get('oxph_setpoint_mw', oxph_forecast_raw)
-        if pd.isna(oxph_setpoint_raw):
+        oxph_setpoint_raw = _first_non_missing(
+            row,
+            [
+                'OXPH_setpoint_MW',
+                'oxph_setpoint_mw',
+                'oxph_setpoint_target',
+                'OXPH_Setpoint_Target',
+            ],
+        )
+        if oxph_setpoint_raw is None:
             oxph_setpoint_raw = oxph_forecast_raw
 
         r4_forecast_raw = _first_non_missing(row, ['R4_Forecast_CFS', 'R4_Flow', 'r4_forecast'])
@@ -1624,10 +1635,51 @@ def _prepare_chart_data(run, results_df=None):
         chart_data['actual_mask'].append(has_actual)
 
         setpoint_change = None
-        if pd.notna(oxph_setpoint_raw):
-            if prev_setpoint is None or oxph_setpoint_raw != prev_setpoint:
-                setpoint_change = timestamp_pt.isoformat()
-            prev_setpoint = oxph_setpoint_raw
+        explicit_setpoint_change = _first_non_missing(
+            row, ['setpoint_change_time', 'setpoint_adjust_time_pt']
+        )
+        if explicit_setpoint_change is not None:
+            try:
+                if isinstance(explicit_setpoint_change, str):
+                    if not re.search(r'\d{4}-\d{2}-\d{2}', explicit_setpoint_change):
+                        raise ValueError('setpoint change timestamp missing date component')
+                explicit_timestamp = pd.to_datetime(explicit_setpoint_change)
+                if pd.isna(explicit_timestamp):
+                    raise ValueError('setpoint change timestamp is NaT')
+                if explicit_timestamp.tzinfo is None:
+                    explicit_timestamp = explicit_timestamp.tz_localize('UTC')
+                else:
+                    explicit_timestamp = explicit_timestamp.tz_convert('UTC')
+                setpoint_change = explicit_timestamp.tz_convert('America/Los_Angeles').isoformat()
+            except Exception:
+                setpoint_change = None
+
+        setpoint_numeric = safe_float(oxph_setpoint_raw)
+        if setpoint_numeric is not None:
+            setpoint_rounded = round(setpoint_numeric, 1)
+            if setpoint_change is None and (
+                prev_setpoint is None or abs(setpoint_rounded - prev_setpoint) > 0.15
+            ):
+                # Stabilization check: only flag if the setpoint has settled
+                # (next row has the same rounded value, or this is the last row)
+                total_rows = len(merged)
+                is_last = (position + 1 >= total_rows)
+                is_stable = is_last
+                if not is_last:
+                    next_row = merged.iloc[position + 1]
+                    next_sp_raw = _first_non_missing(
+                        next_row,
+                        ['OXPH_setpoint_MW', 'oxph_setpoint_mw',
+                         'oxph_setpoint_target', 'OXPH_Setpoint_Target'],
+                    )
+                    next_sp = safe_float(next_sp_raw)
+                    if next_sp is not None:
+                        is_stable = abs(setpoint_rounded - round(next_sp, 1)) <= 0.15
+                if is_stable:
+                    setpoint_change = timestamp_pt.isoformat()
+                    prev_setpoint = setpoint_rounded
+            else:
+                prev_setpoint = setpoint_rounded
 
         mode_forecast_value = row.get('Mode')
         try:
@@ -1966,12 +2018,19 @@ class SaveEditedOptimizationView(APIView):
                 'OXPH_generation_MW': pick('oxph', 'oxph_forecast'),
                 'OXPH_Schedule_MW': pick('oxph', 'oxph_forecast'),
                 'oxph_setpoint_mw': pick('setpoint', 'oxph_setpoint'),
+                'setpoint_change_time': pick('setpoint_change_time', 'setpoint_change', 'setpointChange'),
                 'R4_Forecast_CFS': pick('r4', 'r4_forecast'),
                 'R30_Forecast_CFS': pick('r30', 'r30_forecast'),
+                'R20_Flow': pick('r20', 'r20_forecast', 'R20_Flow'),
+                'R5L_Flow': pick('r5l', 'r5l_forecast', 'R5L_Flow'),
+                'R26_Flow': pick('r26', 'r26_forecast', 'R26_Flow'),
                 'MFRA_MW_forecast': pick('mfra', 'mfra_forecast'),
                 'MFRA_Forecast_MW': pick('mfra', 'mfra_forecast'),
                 'R4_Actual_CFS': pick('r4_actual', 'r4Actual'),
                 'R30_Actual_CFS': pick('r30_actual', 'r30Actual'),
+                'r20_flow_cfs': pick('r20_actual', 'r20Actual'),
+                'r5l_flow_cfs': pick('r5l_actual', 'r5lActual'),
+                'r26_flow_cfs': pick('r26_actual', 'r26Actual'),
                 'MFRA_Actual_MW': pick('mfra_actual', 'mfraActual'),
                 'OXPH_actual_MW': pick('oxph_actual', 'oxphActual'),
                 'Afterbay_Elevation_Setpoint': pick('float_level', 'floatLevel')

@@ -37,11 +37,10 @@ function markForecastDirty(forceValue) {
 }
 
 const FORECAST_TABLE_HEADERS = [
-    'Date/Time', 'Setpoint', 'OXPH (MW)', 'OXPH Actual', 'Setpoint Change',
+    'Date/Time', 'Setpoint', 'OXPH (MW)', 'ABAY Forecast (ft)', 'OXPH Actual', 'Setpoint Change',
     'MFRA Forecast', 'MFRA Actual',
     'R4 Forecast', 'R4 Actual', 'R30 Forecast', 'R30 Actual', 
-    'R20 Forecast', 'R5L Forecast', 'R26 Forecast', 
-    'Abay Elevation'
+    'R20 Forecast', 'R5L Forecast', 'R26 Forecast'
 ];
 
 const FORECAST_TABLE_COLUMNS = [
@@ -52,25 +51,26 @@ const FORECAST_TABLE_COLUMNS = [
     width: 170,
     renderer: forecastDateTimeRenderer,
   },
-  { data: "setpoint", type: "numeric", numericFormat: { pattern: "0.0" } },
-  { data: "oxph", type: "numeric", numericFormat: { pattern: "0.0" }},
-  { data: "oxphActual", type: "numeric", numericFormat: { pattern: "0.0" }, readOnly: true },
+  { data: "setpoint", type: "numeric", numericFormat: { pattern: "0.0" }, width: 95 },
+  { data: "oxph", type: "numeric", numericFormat: { pattern: "0.0" }, width: 95 },
+  { data: "elevation", type: "numeric", numericFormat: { pattern: "0,0.0" }, readOnly: true, width: 135 },
+  { data: "oxphActual", type: "numeric", numericFormat: { pattern: "0.0" }, readOnly: true, width: 95 },
   { 
     data: "setpointChange", 
     type: "text", 
     readOnly: true,
+    width: 120,
     renderer: forecastTableSetpointChangeRenderer
   },
-  { data: "mfra", type: "numeric", numericFormat: { pattern: "0,0" } },
-{ data: "mfraActual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true },
-{ data: "r4", type: "numeric", numericFormat: { pattern: "0,0" } },
-{ data: "r4Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true },
-{ data: "r30", type: "numeric", numericFormat: { pattern: "0,0" } },
-{ data: "r30Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true },
-{ data: "r20", type: "numeric", numericFormat: { pattern: "0,0" } },
-{ data: "r5l", type: "numeric", numericFormat: { pattern: "0,0" } },
-{ data: "r26", type: "numeric", numericFormat: { pattern: "0,0" } },
-  { data: "elevation", type: "numeric", numericFormat: { pattern: "0,0.0" }, readOnly: true },
+  { data: "mfra", type: "numeric", numericFormat: { pattern: "0,0" }, width: 95 },
+  { data: "mfraActual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 95 },
+  { data: "r4", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r4Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
+  { data: "r30", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r30Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
+  { data: "r20", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r5l", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r26", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
 ];
 
 const PACIFIC_TIMEZONE = "America/Los_Angeles";
@@ -81,15 +81,17 @@ const EDITABLE_FIELD_CONFIG = Object.freeze({
   mfra: { decimals: 0, step: "1", min: 0 },
   r4: { decimals: 0, step: "10", min: 0 },
   r30: { decimals: 0, step: "10", min: 0 },
+  r20: { decimals: 0, step: "10", min: 0 },
 });
 
-const FORECAST_TABLE_EDITABLE_FIELDS = new Set(['setpoint', 'mfra', 'r4', 'r30']);
+const FORECAST_TABLE_EDITABLE_FIELDS = new Set(['setpoint', 'mfra', 'r4', 'r30', 'r20']);
 
 const EDITABLE_FIELD_LABELS = Object.freeze({
   setpoint: "OXPH Setpoint",
   mfra: "MFRA Forecast",
   r4: "R4 Forecast",
-  r30: "R30 Forecast"
+  r30: "R30 Forecast",
+  r20: "R20 Forecast",
 });
 
 const TABLE_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
@@ -132,6 +134,125 @@ function buildDayDividers(labels) {
   return lines;
 }
 
+// ECharts helper - "Now" blinking red dot on chart lines
+// Returns markPoint config for the current-time position on a series
+function buildNowMarkPoint(seriesData, actualMask) {
+  if (!Array.isArray(seriesData) || !Array.isArray(actualMask)) return null;
+  // Find the last actual data index (= "now")
+  var nowIdx = -1;
+  for (var i = actualMask.length - 1; i >= 0; i--) {
+    if (actualMask[i] === true || actualMask[i] === 1 || actualMask[i] === '1' || actualMask[i] === 'true') {
+      nowIdx = i;
+      break;
+    }
+  }
+  if (nowIdx < 0 || nowIdx >= seriesData.length || seriesData[nowIdx] == null) return null;
+  return {
+    symbol: 'circle',
+    symbolSize: 12,
+    animation: true,
+    animationDuration: 1000,
+    animationEasingUpdate: 'cubicInOut',
+    data: [{
+      coord: [nowIdx, seriesData[nowIdx]],
+      itemStyle: {
+        color: '#ff2244',
+        borderColor: '#ff2244',
+        borderWidth: 2,
+        shadowColor: 'rgba(255, 34, 68, 0.8)',
+        shadowBlur: 10
+      },
+      label: { show: false }
+    }]
+  };
+}
+
+// Blink timer for the "now" dots — toggles opacity on all charts
+var _nowBlinkInterval = null;
+var _nowBlinkVisible = true;
+function startNowDotBlink() {
+  if (_nowBlinkInterval) return; // already running
+  _nowBlinkVisible = true;
+  _nowBlinkInterval = setInterval(function () {
+    _nowBlinkVisible = !_nowBlinkVisible;
+    var opacity = _nowBlinkVisible ? 1.0 : 0.15;
+    var size = _nowBlinkVisible ? 12 : 6;
+    // Update elevation chart
+    if (elevationChart) {
+      try {
+        var elevOpt = elevationChart.getOption();
+        if (elevOpt && elevOpt.series) {
+          elevOpt.series.forEach(function (s, idx) {
+            if (s.markPoint && s.markPoint.data && s.markPoint.data.length) {
+              elevationChart.setOption({
+                series: [{ id: undefined }] // placeholder
+              });
+              // Direct approach: update markPoint on each series that has one
+              var update = {};
+              update['series.' + idx + '.markPoint.symbolSize'] = size;
+              // ECharts doesn't support dot-notation updates, so build series array
+            }
+          });
+          // Rebuild series update array
+          var seriesUpdate = elevOpt.series.map(function (s) {
+            if (s.markPoint && s.markPoint.data && s.markPoint.data.length) {
+              return {
+                markPoint: {
+                  symbolSize: size,
+                  data: s.markPoint.data.map(function (d) {
+                    return Object.assign({}, d, {
+                      itemStyle: Object.assign({}, d.itemStyle, {
+                        opacity: opacity,
+                        shadowBlur: _nowBlinkVisible ? 10 : 3
+                      })
+                    });
+                  })
+                }
+              };
+            }
+            return {};
+          });
+          elevationChart.setOption({ series: seriesUpdate }, { notMerge: false, lazyUpdate: true });
+        }
+      } catch (e) { /* ignore blink errors */ }
+    }
+    // Update OXPH chart
+    if (oxphChart) {
+      try {
+        var oxphOpt = oxphChart.getOption();
+        if (oxphOpt && oxphOpt.series) {
+          var seriesUpdate2 = oxphOpt.series.map(function (s) {
+            if (s.markPoint && s.markPoint.data && s.markPoint.data.length) {
+              return {
+                markPoint: {
+                  symbolSize: size,
+                  data: s.markPoint.data.map(function (d) {
+                    return Object.assign({}, d, {
+                      itemStyle: Object.assign({}, d.itemStyle, {
+                        opacity: opacity,
+                        shadowBlur: _nowBlinkVisible ? 10 : 3
+                      })
+                    });
+                  })
+                }
+              };
+            }
+            return {};
+          });
+          oxphChart.setOption({ series: seriesUpdate2 }, { notMerge: false, lazyUpdate: true });
+        }
+      } catch (e) { /* ignore blink errors */ }
+    }
+  }, 1200); // 1.2 second blink cycle — slow, deliberate pulse
+}
+
+function stopNowDotBlink() {
+  if (_nowBlinkInterval) {
+    clearInterval(_nowBlinkInterval);
+    _nowBlinkInterval = null;
+  }
+}
+
 // ECharts helper - destroy chart safely
 function destroyEChart(chartInstance) {
   if (chartInstance && typeof chartInstance.dispose === 'function') {
@@ -145,8 +266,14 @@ const ABAY_MATH = Object.freeze({
   B_COEF: -1403.8,
   C_COEF: 780566.0,
   AF_PER_CFS_HOUR: 3600.0 / 43560.0,
+  OXPH_MIN_MW: 0.8,
+  OXPH_MAX_MW: 5.8,
+  OXPH_RAMP_MW_PER_MIN: 0.042,
+  OXPH_RAMP_MW_PER_HOUR: 0.042 * 60.0,
   OXPH_MW_TO_CFS_FACTOR: 163.73,
   OXPH_MW_TO_CFS_OFFSET: 83.0,
+  OXPH_HEAD_LOSS_SLOPE: 0.0912,
+  OXPH_HEAD_LOSS_INTERCEPT: -101.42,
   MFRA_MW2_TO_CFS_FACTOR: 0.00943,
   MFRA_MW_TO_CFS_FACTOR: 5.6653,
   MFRA_MW_TO_CFS_OFFSET: 18.54,
@@ -262,6 +389,21 @@ function computeNetAbayCfs(inputs) {
 
   const regulated = regulatedComponentCfs(mf12Cfs, r4, r5l);
   return base + regulated - oxphCfs;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function computeHeadLimitedOxphCapMw(elevationFt) {
+  const elevation = toFiniteNumber(elevationFt);
+  if (elevation === null) {
+    return ABAY_MATH.OXPH_MAX_MW;
+  }
+  return (
+    ABAY_MATH.OXPH_HEAD_LOSS_SLOPE * elevation +
+    ABAY_MATH.OXPH_HEAD_LOSS_INTERCEPT
+  );
 }
 
 function resolveRowMode(row) {
@@ -464,6 +606,7 @@ function initializeRunHistoryModal() {
 
 async function openRunHistoryModal() {
   try {
+    releaseHandsontableEditorFocus();
     lastFocusedElement = document.activeElement;
 
     if (!runUsersLoaded) {
@@ -772,7 +915,7 @@ function detectForecastChanges() {
     return true;
   }
 
-  const fieldsToCheck = ["setpoint", "mfra", "r4", "r30"];
+  const fieldsToCheck = ["setpoint", "mfra", "r4", "r30", "r20"];
 
   for (let i = 0; i < forecastData.length; i++) {
     const current = forecastData[i];
@@ -1146,7 +1289,7 @@ function getBaseChartOption(labels, yAxisName, yMin) {
   return {
     animation: true,
     animationDuration: 600,
-    grid: { left: 60, right: 30, top: 40, bottom: 80 },
+    grid: { left: 60, right: 30, top: 50, bottom: 80 },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'cross' }
@@ -1212,8 +1355,9 @@ function initializeCharts() {
   // Historical Analysis Chart (ECharts)
   historicalChart = initEChart('historicalChart');
   if (historicalChart) {
-    var histOpt = getBaseChartOption([], 'Value');
-    histOpt.legend = { show: true, textStyle: { fontSize: 12 } };
+    var histOpt = getBaseChartOption([], 'Elevation (ft)', 1166);
+    histOpt.legend = { show: true, top: 5, left: 'center', textStyle: { fontSize: 12 } };
+    histOpt.yAxis.max = 1178;
     historicalChart.setOption(histOpt);
   }
 
@@ -1707,9 +1851,42 @@ function applyElevationChartData(chartData, animationMode = "default") {
   // Build day divider markLines
   var dividers = buildDayDividers(labels);
 
+  // Build "Now" indicator — blinking red dot + vertical line
+  var mask = chartData.actual_mask || [];
+  var nowMarkPoint = buildNowMarkPoint(actual, mask);
+  var nowIdx = -1;
+  for (var ni = mask.length - 1; ni >= 0; ni--) {
+    if (mask[ni] === true || mask[ni] === 1) { nowIdx = ni; break; }
+  }
+
+  // Combine day dividers with "Now" vertical line
+  var elevDividers = dividers.slice();
+  if (nowIdx >= 0) {
+    elevDividers.push({
+      xAxis: nowIdx,
+      lineStyle: { color: '#ff006e', width: 2, type: 'dashed' },
+      label: { show: true, position: 'insideEndTop', formatter: 'Now', fontSize: 10, color: '#ff006e' }
+    });
+  }
+
   var biasLabel = 'Bias Corrected Expected';
   if (currentBiasValue != null && Number.isFinite(currentBiasValue)) {
     biasLabel = 'Expected (Bias: ' + currentBiasValue + ' CFS)';
+  }
+
+  // Build Actual Elevation series config
+  var actualElevSeries = {
+    name: 'Actual Elevation',
+    type: 'line',
+    data: actual,
+    itemStyle: { color: '#e74c3c' },
+    lineStyle: { width: 2 },
+    symbol: 'none',
+    smooth: false,
+    connectNulls: false
+  };
+  if (nowMarkPoint) {
+    actualElevSeries.markPoint = nowMarkPoint;
   }
 
   elevationChart.setOption({
@@ -1717,21 +1894,13 @@ function applyElevationChartData(chartData, animationMode = "default") {
     yAxis: { min: yMin, max: yMax },
     legend: {
       show: true,
-      bottom: 35,
+      top: 5,
+      left: 'center',
       textStyle: { fontSize: 11 },
       data: ['Actual Elevation', biasLabel, 'Optimized Forecast', 'Float Level']
     },
     series: [
-      {
-        name: 'Actual Elevation',
-        type: 'line',
-        data: actual,
-        itemStyle: { color: '#e74c3c' },
-        lineStyle: { width: 2 },
-        symbol: 'none',
-        smooth: false,
-        connectNulls: false
-      },
+      actualElevSeries,
       {
         name: biasLabel,
         type: 'line',
@@ -1756,7 +1925,7 @@ function applyElevationChartData(chartData, animationMode = "default") {
           silent: true,
           symbol: 'none',
           label: { show: false },
-          data: dividers
+          data: elevDividers
         }
       },
       {
@@ -1771,6 +1940,9 @@ function applyElevationChartData(chartData, animationMode = "default") {
       }
     ]
   }, { notMerge: false, lazyUpdate: animationMode === 'none' });
+
+  // Start the blinking animation
+  startNowDotBlink();
 
   updateBiasLegendLabel(currentBiasValue);
 
@@ -1950,8 +2122,31 @@ function refreshPowerChart(animationMode = "default") {
 
   // Add day dividers to first series
   var dividers = buildDayDividers(labels);
-  if (filtered.length && dividers.length) {
-    filtered[0].markLine = { silent: true, symbol: 'none', label: { show: false }, data: dividers };
+
+  // Find the "Now" boundary and add markLine + markPoint
+  var oxphMask = latestChartData?.actual_mask || [];
+  var oxphNowIdx = -1;
+  for (var ni = oxphMask.length - 1; ni >= 0; ni--) {
+    if (oxphMask[ni] === true || oxphMask[ni] === 1) { oxphNowIdx = ni; break; }
+  }
+  // Add "Now" vertical line to dividers
+  var oxphDividers = dividers.slice();
+  if (oxphNowIdx >= 0) {
+    oxphDividers.push({
+      xAxis: oxphNowIdx,
+      lineStyle: { color: '#ff006e', width: 2, type: 'dashed' },
+      label: { show: true, position: 'insideEndTop', formatter: 'Now', fontSize: 10, color: '#ff006e' }
+    });
+  }
+  if (filtered.length && oxphDividers.length) {
+    filtered[0].markLine = { silent: true, symbol: 'none', label: { show: false }, data: oxphDividers };
+  }
+  // Add blinking red dot to first series at the "Now" position
+  if (filtered.length && oxphNowIdx >= 0) {
+    var oxphNowMark = buildNowMarkPoint(filtered[0].data, oxphMask);
+    if (oxphNowMark) {
+      filtered[0].markPoint = oxphNowMark;
+    }
   }
 
   oxphChart.setOption({
@@ -2360,6 +2555,8 @@ function initializeForecastTable() {
     multiColumnSorting: false,
     cells: forecastTableCellProperties,
     afterChange: handleForecastTableAfterChange,
+    afterOnCellMouseDown: handleForecastTableCellMouseDown,
+    afterSelection: handleForecastTableAfterSelection,
   });
 
   window.addEventListener("resize", handleForecastTableResize);
@@ -2536,13 +2733,12 @@ function applyForecastTableValue(rowIndex, field, rawValue, previousValue) {
     previousNumeric !== null && numbersAreClose(previousNumeric, value);
 
   if (field === "setpoint") {
-    const oxphBefore = toFiniteNumber(row.oxph);
     row.setpoint = value;
-    row.oxph = value;
     if (!noMeaningfulChange) {
+      row.setpointChange = toValidDate(row.datetime);
       return true;
     }
-    return !numbersAreClose(oxphBefore, value);
+    return false;
   }
 
   if (field === "mfra") {
@@ -2578,9 +2774,21 @@ function computeActualRowCutoff(rows) {
   return count;
 }
 
+function normalizeSetpointForDisplayComparison(value) {
+  const numeric = toFiniteNumber(value);
+  if (numeric === null) {
+    return null;
+  }
+  return Math.round(numeric * 10) / 10;
+}
+
 function isActualDataRow(row) {
   if (!row) {
     return false;
+  }
+  const rowDate = toValidDate(row.datetime);
+  if (rowDate && rowDate.getTime() <= Date.now()) {
+    return true;
   }
   return (
     toFiniteNumber(row.oxphActual) !== null ||
@@ -2727,7 +2935,160 @@ function forecastDateTimeRenderer(
   td.title = date ? formatTableDateTime(date) : "";
 }
 
-// Recalculate elevation based on MFRA/OXPH changes
+function syncSetpointChangeAnnotations(startIndex = 0, preserveExistingChanges = false) {
+  if (!Array.isArray(forecastData) || !forecastData.length) {
+    return;
+  }
+
+  const STABILITY_TOLERANCE = 0.15;
+  const length = forecastData.length;
+  const parsedIndex = Number.parseInt(startIndex, 10);
+  const normalizedStart = Math.min(
+    Math.max(Number.isFinite(parsedIndex) ? parsedIndex : 0, 0),
+    length - 1
+  );
+
+  // Find the reference setpoint: the last stable value before our start range.
+  let referenceSetpoint = null;
+  if (normalizedStart > 0) {
+    for (let j = normalizedStart - 1; j >= 0; j--) {
+      const sp = normalizeSetpointForDisplayComparison(forecastData[j]?.setpoint);
+      if (sp !== null) {
+        referenceSetpoint = sp;
+        break;
+      }
+    }
+  }
+
+  for (let i = normalizedStart; i < length; i++) {
+    const row = forecastData[i];
+    const currentSetpoint = normalizeSetpointForDisplayComparison(row?.setpoint);
+    const existingChange = toValidDate(row?.setpointChange);
+
+    if (currentSetpoint === null) {
+      continue;
+    }
+
+    // First row with a valid setpoint: always flag as starting point.
+    if (referenceSetpoint === null) {
+      row.setpointChange = existingChange ?? toValidDate(row?.datetime);
+      referenceSetpoint = currentSetpoint;
+      continue;
+    }
+
+    const differsFromReference = Math.abs(currentSetpoint - referenceSetpoint) > STABILITY_TOLERANCE;
+
+    if (differsFromReference) {
+      // Check stabilization: next row has the same value (or this is the last row).
+      const isLastRow = i === length - 1;
+      let isStable = isLastRow;
+
+      if (!isLastRow) {
+        const nextSetpoint = normalizeSetpointForDisplayComparison(
+          forecastData[i + 1]?.setpoint
+        );
+        isStable =
+          nextSetpoint !== null &&
+          Math.abs(currentSetpoint - nextSetpoint) <= STABILITY_TOLERANCE;
+      }
+
+      if (isStable) {
+        row.setpointChange = existingChange ?? toValidDate(row?.datetime);
+        referenceSetpoint = currentSetpoint;
+      } else if (preserveExistingChanges && existingChange) {
+        // Keep user-edited annotation even during ramp
+        referenceSetpoint = currentSetpoint;
+      } else {
+        row.setpointChange = null;
+      }
+    } else {
+      // Same as reference — clear unless preserving a user edit
+      if (preserveExistingChanges && existingChange) {
+        // Keep user-edited annotation
+      } else {
+        row.setpointChange = null;
+      }
+    }
+  }
+}
+
+function handleForecastTableCellMouseDown(event, coords) {
+  if (!forecastHot || !coords || coords.row < 0 || coords.col < 0) {
+    return;
+  }
+  if (event?.button !== 0 || event?.ctrlKey || event?.metaKey || event?.shiftKey) {
+    return;
+  }
+
+  const prop = forecastHot.colToProp(coords.col);
+  if (!FORECAST_TABLE_EDITABLE_FIELDS.has(prop)) {
+    return;
+  }
+
+  // Use requestAnimationFrame instead of setTimeout(0) to wait for
+  // Handsontable's internal mouse handling and the browser's paint cycle
+  // to complete before attempting to open the editor.
+  requestAnimationFrame(() => {
+    if (!forecastHot) return;
+    try {
+      // Check if the cell is already selected to avoid disrupting
+      // an editor that Handsontable may have already opened.
+      const selected = forecastHot.getSelectedLast();
+      const alreadySelected =
+        selected &&
+        selected[0] === coords.row &&
+        selected[1] === coords.col;
+
+      if (!alreadySelected) {
+        forecastHot.selectCell(
+          coords.row,
+          coords.col,
+          coords.row,
+          coords.col,
+          false,
+          false
+        );
+      }
+
+      // Only begin editing if the editor is not already open
+      const editor = forecastHot.getActiveEditor();
+      if (editor && typeof editor.isOpened === "function" && !editor.isOpened()) {
+        forecastHot.beginEditing();
+      } else if (!editor) {
+        forecastHot.beginEditing();
+      }
+    } catch (error) {
+      console.debug("Unable to begin table edit on click:", error);
+    }
+  });
+}
+
+function handleForecastTableAfterSelection(row, col, row2, col2) {
+  // Backup for single-click editing: if afterOnCellMouseDown misses,
+  // this catches the selection and opens the editor.
+  if (!forecastHot || row !== row2 || col !== col2) {
+    return;
+  }
+
+  const prop = forecastHot.colToProp(col);
+  if (!FORECAST_TABLE_EDITABLE_FIELDS.has(prop)) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    if (!forecastHot) return;
+    try {
+      const editor = forecastHot.getActiveEditor();
+      if (editor && typeof editor.isOpened === "function" && !editor.isOpened()) {
+        forecastHot.beginEditing();
+      }
+    } catch (error) {
+      console.debug("Unable to begin table edit after selection:", error);
+    }
+  });
+}
+
+// Recalculate elevation based on setpoint/flow changes
 function recalculateElevation(startIndex = 0) {
   if (!Array.isArray(forecastData) || !forecastData.length) {
     return;
@@ -2786,6 +3147,16 @@ function recalculateElevation(startIndex = 0) {
     expectedSeries[i] = value;
   }
 
+  let previousElevationFt = toFiniteNumber(expectedSeries[seedRowIndex]);
+  if (previousElevationFt === null) {
+    previousElevationFt = seedElevation;
+  }
+  let previousGenerationMw = chooseFlowValue(
+    forecastData[seedRowIndex],
+    "oxphActual",
+    "oxph"
+  );
+
   for (let i = seedRowIndex + 1; i < length; i++) {
     const row = forecastData[i];
     const biasValue = getBiasForRow(row);
@@ -2796,23 +3167,74 @@ function recalculateElevation(startIndex = 0) {
       r20: chooseFlowValue(row, "r20Actual", "r20"),
       r5l: chooseFlowValue(row, "r5lActual", "r5l"),
       r26: chooseFlowValue(row, "r26Actual", "r26"),
-      oxph: chooseFlowValue(row, "oxphActual", "oxph"),
       mfra: chooseFlowValue(row, "mfraActual", "mfra"),
       mode: resolveRowMode(row),
     };
 
-    const netCfs = computeNetAbayCfs(netInputs);
+    const actualOxph = toFiniteNumber(row.oxphActual);
+    let effectiveOxph = actualOxph;
+
+    if (effectiveOxph === null) {
+      const priorGeneration = Number.isFinite(previousGenerationMw)
+        ? previousGenerationMw
+        : toFiniteNumber(row.oxph) ?? ABAY_MATH.OXPH_MIN_MW;
+      const targetSetpoint =
+        toFiniteNumber(row.setpoint) ??
+        toFiniteNumber(row.oxph) ??
+        priorGeneration;
+      const rampedGeneration =
+        priorGeneration +
+        clamp(
+          targetSetpoint - priorGeneration,
+          -ABAY_MATH.OXPH_RAMP_MW_PER_HOUR,
+          ABAY_MATH.OXPH_RAMP_MW_PER_HOUR
+        );
+
+      let constrainedGeneration = clamp(
+        rampedGeneration,
+        ABAY_MATH.OXPH_MIN_MW,
+        ABAY_MATH.OXPH_MAX_MW
+      );
+
+      const headCapMw = computeHeadLimitedOxphCapMw(previousElevationFt);
+      if (Number.isFinite(headCapMw) && constrainedGeneration > headCapMw) {
+        constrainedGeneration = headCapMw;
+      }
+
+      effectiveOxph = Math.max(0, constrainedGeneration);
+      row.oxph = effectiveOxph;
+    } else {
+      row.oxph = effectiveOxph;
+    }
+
+    const netCfs = computeNetAbayCfs({ ...netInputs, oxph: effectiveOxph });
     currentAf += (netCfs + biasCfs) * ABAY_MATH.AF_PER_CFS_HOUR;
     const expectedFt = abayAfToFeet(currentAf);
     if (Number.isFinite(expectedFt)) {
-      row.elevation = expectedFt;
-      expectedSeries[i] = expectedFt;
+      const floatLevel = toFiniteNumber(row.floatLevel);
+      const boundedFt =
+        floatLevel !== null ? Math.min(expectedFt, floatLevel) : expectedFt;
+      if (boundedFt !== expectedFt) {
+        const boundedAf = abayFeetToAf(boundedFt);
+        if (Number.isFinite(boundedAf)) {
+          currentAf = boundedAf;
+        }
+      }
+      row.elevation = boundedFt;
+      expectedSeries[i] = boundedFt;
+      previousElevationFt = boundedFt;
     } else {
       const preserved = toFiniteNumber(row.elevation);
       expectedSeries[i] = preserved !== null ? preserved : null;
+      if (preserved !== null) {
+        previousElevationFt = preserved;
+      }
     }
+
+    previousGenerationMw = effectiveOxph;
   }
 
+  syncSetpointChangeAnnotations(0, true);
   syncChartDataWithExpectedSeries(expectedSeries);
 }
 
@@ -2899,14 +3321,23 @@ function applyActuals(options = {}) {
       row.r30 = r30Actual;
     }
 
-    const r20Actual = toFiniteNumber(row.r20Actual);
-    if (r20Actual !== null) row.r20 = r20Actual;
+    const r20Actual = toRoundedInteger(row.r20Actual);
+    if (r20Actual !== null) {
+      row.r20Actual = r20Actual;
+      row.r20 = r20Actual;
+    }
 
-    const r5lActual = toFiniteNumber(row.r5lActual);
-    if (r5lActual !== null) row.r5l = r5lActual;
+    const r5lActual = toRoundedInteger(row.r5lActual);
+    if (r5lActual !== null) {
+      row.r5lActual = r5lActual;
+      row.r5l = r5lActual;
+    }
 
-    const r26Actual = toFiniteNumber(row.r26Actual);
-    if (r26Actual !== null) row.r26 = r26Actual;
+    const r26Actual = toRoundedInteger(row.r26Actual);
+    if (r26Actual !== null) {
+      row.r26Actual = r26Actual;
+      row.r26 = r26Actual;
+    }
 
     const modeActual = normalizeModeValue(row.modeActual);
     if (modeActual) row.mode = modeActual;
@@ -2969,10 +3400,22 @@ function applyActuals(options = {}) {
     const netCfs = computeNetAbayCfs(netInputs);
     currentAf += (netCfs + biasCfsValue) * ABAY_MATH.AF_PER_CFS_HOUR;
     const expectedFt = abayAfToFeet(currentAf);
-    row.elevation = Number.isFinite(expectedFt) ? expectedFt : row.elevation;
+    if (Number.isFinite(expectedFt)) {
+      const floatLevel = toFiniteNumber(row.floatLevel);
+      const boundedFt =
+        floatLevel !== null ? Math.min(expectedFt, floatLevel) : expectedFt;
+      if (boundedFt !== expectedFt) {
+        const boundedAf = abayFeetToAf(boundedFt);
+        if (Number.isFinite(boundedAf)) {
+          currentAf = boundedAf;
+        }
+      }
+      row.elevation = boundedFt;
+    }
     expectedSeries[i] = row.elevation;
   }
 
+  syncSetpointChangeAnnotations(0);
   syncChartDataWithExpectedSeries(expectedSeries);
   updateForecastTable();
   updateCharts();
@@ -3091,12 +3534,22 @@ async function saveEditedOptimization() {
         oxph: entry.oxph,
         r4: entry.r4,
         r30: entry.r30,
+        r20: entry.r20,
+        r5l: entry.r5l,
+        r26: entry.r26,
         mfra: entry.mfra,
         abay_elevation: entry.abayElevation,
         expected_abay: entry.elevation,
         float_level: entry.floatLevel,
+        setpoint_change_time:
+          entry.setpointChange instanceof Date
+            ? entry.setpointChange.toISOString()
+            : entry.setpointChange ?? null,
         r4_actual: entry.r4Actual,
         r30_actual: entry.r30Actual,
+        r20_actual: entry.r20Actual,
+        r5l_actual: entry.r5lActual,
+        r26_actual: entry.r26Actual,
         mfra_actual: entry.mfraActual,
         oxph_actual: entry.oxphActual,
       })),
@@ -3202,6 +3655,7 @@ function formatDateTimeLocal(date) {
 }
 
 function openSetpointModal(rowIndex) {
+  releaseHandsontableEditorFocus();
   editingRowIndex = rowIndex;
   const row = forecastData[rowIndex];
   lastFocusedElement = document.activeElement;
@@ -3308,8 +3762,6 @@ async function submitSetpointForm() {
   }
   if (!valid) return;
 
-  let currentMW = forecastData[editingRowIndex].oxph;
-  const ramp = 1.5; // MW per hour
   const changeRequest = { setpointVal, start, end };
   const raftingConflict = await checkRaftingConflict(changeRequest);
 
@@ -3323,20 +3775,41 @@ async function submitSetpointForm() {
 }
 
 function applySetpointChange({ setpointVal, start, end }) {
-  let currentMW = forecastData[editingRowIndex].oxph;
-  const ramp = 1.5; // MW per hour
-  forecastData.forEach((r) => {
-    if (r.datetime >= start && r.datetime <= end) {
-      const diff = setpointVal - currentMW;
-      const step = Math.sign(diff) * Math.min(Math.abs(diff), ramp);
-      currentMW += step;
-      r.setpoint = setpointVal;
-      r.oxph = Math.max(0, Math.min(5.8, currentMW));
-      r.setpointChange = start;
+  const setpointConfig = EDITABLE_FIELD_CONFIG.setpoint || {};
+  const clampedSetpoint = clamp(
+    toFiniteNumber(setpointVal) ?? 0,
+    Number.isFinite(setpointConfig.min) ? setpointConfig.min : 0,
+    Number.isFinite(setpointConfig.max) ? setpointConfig.max : 6
+  );
+
+  let earliestChangedIndex = null;
+
+  forecastData.forEach((row, index) => {
+    const rowTime = toValidDate(row?.datetime);
+    if (rowTime && rowTime >= start && rowTime <= end) {
+      const previousSetpoint = toFiniteNumber(row.setpoint);
+      row.setpoint = clampedSetpoint;
+      if (
+        previousSetpoint === null ||
+        !numbersAreClose(previousSetpoint, clampedSetpoint, 0.1)
+      ) {
+        if (earliestChangedIndex === null) {
+          earliestChangedIndex = index;
+        }
+      }
     }
   });
 
-  recalculateElevation(editingRowIndex);
+  if (earliestChangedIndex === null) {
+    closeSetpointModal();
+    showNotification("No setpoint changes applied for the selected range.", "info");
+    return;
+  }
+
+  forecastData[earliestChangedIndex].setpointChange =
+    toValidDate(start) ?? toValidDate(forecastData[earliestChangedIndex]?.datetime);
+
+  recalculateElevation(earliestChangedIndex);
   updateForecastTable();
   updateCharts();
   markForecastDirty();
@@ -3443,6 +3916,7 @@ function timeStringToMinutes(value) {
 }
 
 function showRaftingWarning(conflictDetails) {
+  releaseHandsontableEditorFocus();
   const modal = document.getElementById("raftingWarningModal");
   const backdrop = document.getElementById("raftingWarningBackdrop");
   if (!modal || !backdrop) return;
@@ -3490,6 +3964,39 @@ function confirmRaftingWarning() {
   if (change) {
     pendingSetpointChange = null;
     applySetpointChange(change);
+  }
+}
+
+function releaseHandsontableEditorFocus() {
+  const activeEl = document.activeElement;
+  if (
+    activeEl instanceof HTMLElement &&
+    activeEl.classList.contains("handsontableInput")
+  ) {
+    // Chrome warns when a focused element is also aria-hidden.
+    activeEl.removeAttribute("aria-hidden");
+    activeEl.blur();
+  }
+
+  if (!forecastHot || typeof forecastHot.getActiveEditor !== "function") {
+    return;
+  }
+
+  try {
+    const editor = forecastHot.getActiveEditor();
+    if (
+      editor &&
+      typeof editor.isOpened === "function" &&
+      editor.isOpened() &&
+      typeof editor.finishEditing === "function"
+    ) {
+      editor.finishEditing(false);
+    }
+    if (typeof forecastHot.deselectCell === "function") {
+      forecastHot.deselectCell();
+    }
+  } catch (error) {
+    console.debug("Unable to close Handsontable editor cleanly:", error);
   }
 }
 
@@ -3543,6 +4050,21 @@ document.addEventListener("keydown", (e) => {
     closeSetpointModal();
   }
 });
+
+document.addEventListener(
+  "focusin",
+  (event) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      target.classList.contains("handsontableInput") &&
+      target.getAttribute("aria-hidden") === "true"
+    ) {
+      target.removeAttribute("aria-hidden");
+    }
+  },
+  true
+);
 
 function formatTableDayOfWeek(date) {
   const valid = toValidDate(date);
@@ -4196,17 +4718,27 @@ function updateForecastTableWithData(forecastDataArray) {
   if (!forecastDataArray || forecastDataArray.length === 0) return;
 
   actualsApplied = false;
-
-  let previousSetpointChangeIso = null;
+  let previousResolvedSetpoint = null;
 
   // Convert to the format expected by updateForecastTable
   forecastData = forecastDataArray.map((row) => {
     const datetime = row.datetime ? new Date(row.datetime) : new Date();
     const biasValue = toFiniteNumber(row.bias_cfs ?? row.additional_bias);
-    const setpoint =
-      toFiniteNumber(
-        row.setpoint ?? row.oxph_setpoint ?? row.oxph ?? row.oxph_actual
-      ) ?? 0;
+    let setpoint = toFiniteNumber(
+      row.setpoint ??
+        row.oxph_setpoint ??
+        row.oxph_setpoint_mw ??
+        row.oxph_setpoint_target ??
+        row.OXPH_setpoint_MW
+    );
+    if (setpoint === null) {
+      setpoint = previousResolvedSetpoint;
+    }
+    if (setpoint === null) {
+      setpoint = toFiniteNumber(row.oxph ?? row.oxph_actual) ?? 0;
+    }
+    setpoint = normalizeSetpointForDisplayComparison(setpoint) ?? 0;
+    previousResolvedSetpoint = setpoint;
     const oxphValue = toFiniteNumber(row.oxph ?? row.oxph_actual) ?? 0;
 
     const mfraActual = toRoundedInteger(row.mfra_actual);
@@ -4221,12 +4753,12 @@ function updateForecastTableWithData(forecastDataArray) {
     const r30Forecast = toRoundedInteger(row.r30_forecast);
     const resolvedR30 = r30Forecast ?? r30Actual ?? 0;
 
-    const r20Forecast = toFiniteNumber(row.r20_forecast ?? row.r20_actual);
-    const r5lForecast = toFiniteNumber(row.r5l_forecast ?? row.r5l_actual);
-    const r26Forecast = toFiniteNumber(row.r26_forecast ?? row.r26_actual);
-    const r20Actual = toFiniteNumber(row.r20_actual);
-    const r5lActual = toFiniteNumber(row.r5l_actual);
-    const r26Actual = toFiniteNumber(row.r26_actual);
+    const r20Forecast = toRoundedInteger(row.r20_forecast ?? row.r20_actual);
+    const r5lForecast = toRoundedInteger(row.r5l_forecast ?? row.r5l_actual);
+    const r26Forecast = toRoundedInteger(row.r26_forecast ?? row.r26_actual);
+    const r20Actual = toRoundedInteger(row.r20_actual);
+    const r5lActual = toRoundedInteger(row.r5l_actual);
+    const r26Actual = toRoundedInteger(row.r26_actual);
     const abayElevation = toFiniteNumber(row.abay_elevation);
     const expectedAbay =
       toFiniteNumber(row.expected_abay ?? row.abay_elevation) ?? 0;
@@ -4241,23 +4773,7 @@ function updateForecastTableWithData(forecastDataArray) {
       row.setpointChange ??
       row.oxph_setpoint_change_time ??
       null;
-    let setpointChangeDate = null;
-    if (rawSetpointChange) {
-      const parsed = new Date(rawSetpointChange);
-      if (!Number.isNaN(parsed.getTime())) {
-        const isoValue = parsed.toISOString();
-        if (isoValue !== previousSetpointChangeIso) {
-          setpointChangeDate = parsed;
-          previousSetpointChangeIso = isoValue;
-        } else {
-          setpointChangeDate = null;
-        }
-      } else {
-        previousSetpointChangeIso = null;
-      }
-    } else {
-      previousSetpointChangeIso = null;
-    }
+    const setpointChangeDate = toValidDate(rawSetpointChange);
 
     return {
       datetime,
@@ -4287,6 +4803,7 @@ function updateForecastTableWithData(forecastDataArray) {
     };
   });
 
+  syncSetpointChangeAnnotations(0);
   originalData = JSON.parse(JSON.stringify(forecastData));
   updateForecastTable();
   updateNextSetpointCard(forecastData);
@@ -4731,8 +5248,23 @@ function loadHistoricalData() {
         biasData.push(baseValue + 0.4 + Math.random() * 0.2);
       }
 
+      // Calculate tight Y-axis bounds from data (avoid starting at zero)
+      var histAllVals = [].concat(actualData, expectedData, biasData)
+        .filter(function (v) { return v != null && Number.isFinite(v); });
+      var histYMin = histAllVals.length
+        ? Math.floor(Math.min.apply(null, histAllVals) - 1)
+        : 1166;
+      var histYMax = histAllVals.length
+        ? Math.ceil(Math.max.apply(null, histAllVals) + 1)
+        : 1178;
+
       historicalChart.setOption({
         xAxis: { data: labels },
+        yAxis: {
+          min: histYMin,
+          max: histYMax,
+          name: 'Elevation (ft)'
+        },
         series: [
           {
             name: 'Actual Elevation',
@@ -5445,8 +5977,8 @@ function _buildDrillDownChart(config, seriesDefs) {
 
   schematicDrillDownChart.setOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { show: true, bottom: 30, textStyle: { fontSize: 11 } },
-    grid: { left: 55, right: 20, top: 25, bottom: 75 },
+    legend: { show: true, top: 5, left: 'center', textStyle: { fontSize: 11 } },
+    grid: { left: 55, right: 20, top: 35, bottom: 75 },
     xAxis: {
       type: 'category',
       data: labels,

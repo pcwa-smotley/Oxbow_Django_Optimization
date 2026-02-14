@@ -129,16 +129,29 @@ def run():
     result_df['OXPH_generation_MW'] = g_avg.values
     result_df['setpoint_change_time'] = change_times.values
 
-    # Show time only when Δsetpoint > 0.1 MW
-    thresh = 0.1
+    # Stabilization-based setpoint change detection: only flag when the
+    # setpoint has settled at a new level, not at ramp intermediates.
+    stability_tol = 0.15
     if 'OXPH_ADS' in lookback.columns and lookback['OXPH_ADS'].notna().any():
         last_hist_sp = float(lookback['OXPH_ADS'].dropna().iloc[-1])
     else:
         last_hist_sp = float(lookback['Oxbow_Power'].iloc[-1])
-    prev_s = result_df['OXPH_setpoint_MW'].shift(1)
-    prev_s.iloc[0] = last_hist_sp
-    changed = (result_df['OXPH_setpoint_MW'] - prev_s).abs() > thresh
-    result_df.loc[~changed, 'setpoint_change_time'] = ""
+    sp_rounded = result_df['OXPH_setpoint_MW'].round(1)
+    T = len(sp_rounded)
+    reference_sp = round(last_hist_sp, 1)
+    keep_mask = pd.Series(False, index=result_df.index)
+    for i in range(T):
+        current_sp = float(sp_rounded.iloc[i])
+        if abs(current_sp - reference_sp) > stability_tol:
+            if i == T - 1:
+                is_stable = True
+            else:
+                next_sp = float(sp_rounded.iloc[i + 1])
+                is_stable = abs(current_sp - next_sp) <= stability_tol
+            if is_stable:
+                keep_mask.iloc[i] = True
+                reference_sp = current_sp
+    result_df.loc[~keep_mask, 'setpoint_change_time'] = ""
 
     # Flows/limits from hour-average MW and optimized ABAY_ft
     result_df['OXPH_outflow_cfs'] = oxph_cfs_from_mw_linear(result_df['OXPH_generation_MW']).values

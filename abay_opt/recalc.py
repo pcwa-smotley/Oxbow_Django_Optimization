@@ -327,6 +327,11 @@ def recalc_abay_path(
         AF_t = AF_prev + AF_PER_CFS_HOUR * (known - f * g)
         H_t = float(abay_af_to_feet(AF_t))
 
+        # Operational float cap: once float is reached, bypass gates hold ABAY at float.
+        if not np.isnan(float_ft.iloc[t]) and H_t > float(float_ft.iloc[t]):
+            H_t = float(float_ft.iloc[t])
+            AF_t = float(abay_feet_to_af(H_t))
+
         # Diagnostics & limits
         head_lim = constants.OXPH_HEAD_LOSS_SLOPE * H_t + constants.OXPH_HEAD_LOSS_INTERCEPT
         HEAD.iloc[t] = head_lim

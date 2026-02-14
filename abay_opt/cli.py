@@ -68,7 +68,7 @@ def compute_setpoint_change_annotations(idx_utc, g_end, s_target,
             latest_start = he[t] - pd.Timedelta(minutes=cum)
             if he_prev < latest_start <= he[h]:
                 # Record PT clock time, and set the setpoint *we are changing to* in hour h
-                change_time_str.iloc[h] = latest_start.tz_convert(tz_pt).strftime("%I:%M %p")
+                change_time_str.iloc[h] = latest_start.tz_convert(tz_pt).isoformat()
                 setpoint_override.iloc[h] = max(setpoint_override.iloc[h], float(s_target.iloc[t]))
                 break
             g_left = g_right  # advance to next step
@@ -80,8 +80,10 @@ def compute_setpoint_change_annotations(idx_utc, g_end, s_target,
 
 def generate_final_output(lookback, forecast, result_df, bias_cfs, outfile=None):
     """Create the final combined DataFrame used by both CLI and Django."""
-    # --- only show a time when the setpoint actually changed (> 0.1 MW) ---
-    thresh = 0.1  # MW
+    # --- Stabilization-based setpoint change detection ---
+    # Only flag a change when the setpoint has SETTLED at a new level,
+    # not at every intermediate ramp value.
+    stability_tol = 0.15  # MW tolerance for "same level"
 
     # Last historical PI setpoint (OXPH_ADS), if present
     if 'OXPH_ADS' in lookback.columns and lookback['OXPH_ADS'].notna().any():
@@ -89,15 +91,27 @@ def generate_final_output(lookback, forecast, result_df, bias_cfs, outfile=None)
     else:
         last_hist_sp = float(lookback['Oxbow_Power'].iloc[-1])
 
-    # Previous-hour setpoint series for comparison
-    prev_s = result_df['OXPH_setpoint_MW'].shift(1)
-    prev_s.iloc[0] = last_hist_sp
+    # Round setpoints to 1 decimal for consistent comparison
+    sp_rounded = result_df['OXPH_setpoint_MW'].round(1)
+    T = len(sp_rounded)
+    reference_sp = round(last_hist_sp, 1)
+    keep_mask = pd.Series(False, index=result_df.index)
 
-    # Mask of *actual* change > 0.1 MW
-    changed = (result_df['OXPH_setpoint_MW'] - prev_s).abs() > thresh
+    for i in range(T):
+        current_sp = float(sp_rounded.iloc[i])
+        if abs(current_sp - reference_sp) > stability_tol:
+            # Check stabilization: next row same value, or last row
+            if i == T - 1:
+                is_stable = True
+            else:
+                next_sp = float(sp_rounded.iloc[i + 1])
+                is_stable = abs(current_sp - next_sp) <= stability_tol
+            if is_stable:
+                keep_mask.iloc[i] = True
+                reference_sp = current_sp
 
-    # Blank out times when there wasn't a real change
-    result_df.loc[~changed, 'setpoint_change_time'] = ""
+    # Blank out times where not a stable change
+    result_df.loc[~keep_mask, 'setpoint_change_time'] = ""
 
     # Flows/limits from hour-average MW and optimized ABAY_ft
     result_df['OXPH_outflow_cfs'] = oxph_cfs_from_mw_linear(result_df['OXPH_generation_MW']).values
@@ -384,7 +398,7 @@ def main():
                 cum += step_minutes
                 latest_start = he[t] - pd.Timedelta(minutes=cum)
                 if he_prev < latest_start <= he[h]:
-                    change_time_str.iloc[h] = latest_start.tz_convert(tz_pt).strftime("%I:%M %p")
+                    change_time_str.iloc[h] = latest_start.tz_convert(tz_pt).isoformat()
                     # Set the hour's setpoint to the value we change *to* (e.g., rafting floor)
                     setpoint_override.iloc[h] = max(setpoint_override.iloc[h], float(s_target.iloc[t]))
                     break

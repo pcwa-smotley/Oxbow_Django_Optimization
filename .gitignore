@@ -68,3 +68,4 @@ Thumbs.db
 *.sqlite
 ~$*
 django_backend/staticfiles/
+WSL_SETUP.md

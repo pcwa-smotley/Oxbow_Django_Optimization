@@ -3454,6 +3454,12 @@ body {
 }
 
 /* Scrollbar Styling */
+[data-theme="dark"] {
+    /* Firefox */
+    scrollbar-color: rgba(0, 212, 255, 0.35) rgba(0, 0, 0, 0.2);
+    scrollbar-width: thin;
+}
+
 [data-theme="dark"] ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -3466,10 +3472,6 @@ body {
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
     background: rgba(0, 212, 255, 0.2);
     border-radius: 4px;
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 212, 255, 0.35);
 }
 
 /* Selection Color */
