@@ -235,16 +235,22 @@ class CAISODAAwardsView(APIView):
     """API endpoint for CAISO Day Ahead awards for Middle Fork (MFP1)"""
 
     def get(self, request):
-        """Return stored DA awards for a given trade date."""
+        """Return stored DA awards for a given trade date.
+
+        Query params:
+          - trade_date: ISO date string (default: next delivery day)
+          - detail: if "true", include per-resource breakdown from CAISODAAward
+        """
         try:
+            import pytz
+            tz_pt = pytz.timezone('America/Los_Angeles')
+
             trade_date_str = request.query_params.get('trade_date')
             if trade_date_str:
                 trade_dt = date.fromisoformat(trade_date_str)
             else:
                 # Default to next delivery day
-                now_pt = timezone.now().astimezone(
-                    __import__('pytz').timezone('America/Los_Angeles')
-                )
+                now_pt = timezone.now().astimezone(tz_pt)
                 trade_dt = (now_pt + timedelta(days=1)).date() if now_pt.hour >= 13 else now_pt.date()
 
             summaries = CAISODAAwardSummary.objects.filter(trade_date=trade_dt).order_by('interval_start_utc')
@@ -258,14 +264,42 @@ class CAISODAAwardsView(APIView):
                     'resource_count': s.resource_count,
                 })
 
-            return Response({
+            response_data = {
                 'status': 'success',
                 'trade_date': trade_dt.isoformat(),
                 'has_awards': has_awards,
                 'hours': len(hourly),
                 'hourly_data': hourly,
                 'fetched_at': summaries.first().fetched_at.isoformat() if has_awards else None,
-            })
+            }
+
+            # Include per-resource detail when requested
+            include_detail = request.query_params.get('detail', '').lower() == 'true'
+            if include_detail and has_awards:
+                raw_awards = CAISODAAward.objects.filter(
+                    trade_date=trade_dt
+                ).order_by('interval_start_utc', 'resource')
+
+                resources = sorted(
+                    raw_awards.values_list('resource', flat=True).distinct()
+                )
+
+                detail_rows = []
+                for award in raw_awards:
+                    hour_pt = award.interval_start_utc.astimezone(tz_pt)
+                    detail_rows.append({
+                        'hour_pt': hour_pt.strftime('%I:%M %p'),
+                        'hour_utc': award.interval_start_utc.strftime('%H:%M'),
+                        'resource': award.resource,
+                        'mw': award.mw,
+                        'product_type': award.product_type,
+                        'schedule_type': award.schedule_type,
+                    })
+
+                response_data['resources'] = resources
+                response_data['detail'] = detail_rows
+
+            return Response(response_data)
 
         except Exception as e:
             logger.error(f"Error in CAISODAAwardsView GET: {e}", exc_info=True)
@@ -274,76 +308,109 @@ class CAISODAAwardsView(APIView):
                 'detail': str(e),
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def post(self, request):
-        """Fetch fresh DA awards from CAISO API, store in DB, return summary."""
-        try:
-            trade_date_str = request.data.get('trade_date')
-            if trade_date_str:
-                trade_dt = date.fromisoformat(trade_date_str)
-            else:
-                now_pt = timezone.now().astimezone(
-                    __import__('pytz').timezone('America/Los_Angeles')
+    @staticmethod
+    def _fetch_and_store_date(trade_dt, fetch_fn, agg_fn):
+        """Fetch DA awards for one trade date, store raw + summary in DB.
+
+        Returns (raw_record_count, summary_records_list, hourly_series_or_none).
+        """
+        raw_df = fetch_fn(trade_dt)
+        if raw_df is None or raw_df.empty:
+            return 0, [], None
+
+        # Store raw award records (all resources/schedule types for diagnostics)
+        for _, row in raw_df.iterrows():
+            try:
+                ist = pd.Timestamp(row['intervalStartTime']).to_pydatetime()
+                iet = pd.Timestamp(row['intervalEndTime']).to_pydatetime()
+                CAISODAAward.objects.update_or_create(
+                    trade_date=trade_dt,
+                    interval_start_utc=ist,
+                    resource=row.get('resource', 'UNKNOWN'),
+                    product_type=row.get('productType', 'EN'),
+                    defaults={
+                        'interval_end_utc': iet,
+                        'mw': float(row.get('MW', 0)),
+                        'schedule_type': row.get('scheduleType', 'FINAL'),
+                    },
                 )
-                trade_dt = (now_pt + timedelta(days=1)).date() if now_pt.hour >= 13 else now_pt.date()
+            except Exception as row_err:
+                logger.warning(f"Skipping raw award row: {row_err}")
 
-            # Import the CAISO DA service
-            from abay_opt.caiso_da import fetch_mfp1_da_awards, aggregate_hourly_mw
-
-            raw_df = fetch_mfp1_da_awards(trade_dt)
-            if raw_df is None or raw_df.empty:
-                return Response({
-                    'status': 'success',
-                    'trade_date': trade_dt.isoformat(),
-                    'has_awards': False,
-                    'message': 'No DA awards available for this date.',
+        # Aggregate MDFKRL_2_PROJCT CLEARED awards and store summaries
+        hourly_series = agg_fn(raw_df)
+        summary_records = []
+        if hourly_series is not None:
+            for ts, mw_val in hourly_series.items():
+                CAISODAAwardSummary.objects.update_or_create(
+                    trade_date=trade_dt,
+                    interval_start_utc=ts.to_pydatetime(),
+                    defaults={
+                        'total_mw': float(mw_val),
+                        'resource_count': 1,  # filtered to MDFKRL_2_PROJCT
+                    },
+                )
+                summary_records.append({
+                    'interval_start_utc': ts.isoformat(),
+                    'total_mw': float(mw_val),
                 })
 
-            # Store raw award records
-            for _, row in raw_df.iterrows():
-                try:
-                    ist = pd.Timestamp(row['intervalStartTime']).to_pydatetime()
-                    iet = pd.Timestamp(row['intervalEndTime']).to_pydatetime()
-                    CAISODAAward.objects.update_or_create(
-                        trade_date=trade_dt,
-                        interval_start_utc=ist,
-                        resource=row.get('resource', 'UNKNOWN'),
-                        product_type=row.get('productType', 'EN'),
-                        defaults={
-                            'interval_end_utc': iet,
-                            'mw': float(row.get('MW', 0)),
-                            'schedule_type': row.get('scheduleType', 'FINAL'),
-                        },
-                    )
-                except Exception as row_err:
-                    logger.warning(f"Skipping raw award row: {row_err}")
+        return len(raw_df), summary_records, hourly_series
 
-            # Aggregate and store summaries
-            hourly_series = aggregate_hourly_mw(raw_df)
-            summary_records = []
-            if hourly_series is not None:
-                for ts, mw_val in hourly_series.items():
-                    obj, _ = CAISODAAwardSummary.objects.update_or_create(
-                        trade_date=trade_dt,
-                        interval_start_utc=ts.to_pydatetime(),
-                        defaults={
-                            'total_mw': float(mw_val),
-                            'resource_count': len(raw_df['resource'].unique()) if 'resource' in raw_df.columns else 1,
-                        },
-                    )
-                    summary_records.append({
-                        'interval_start_utc': ts.isoformat(),
-                        'total_mw': float(mw_val),
-                    })
+    def post(self, request):
+        """Fetch fresh DA awards from CAISO for today AND tomorrow, store in DB."""
+        try:
+            import pytz
+            tz_pt = pytz.timezone('America/Los_Angeles')
+            from abay_opt.caiso_da import fetch_mfp1_da_awards, aggregate_hourly_mw
+
+            # If a specific date was requested, fetch only that date
+            trade_date_str = request.data.get('trade_date')
+            if trade_date_str:
+                dates_to_fetch = [date.fromisoformat(trade_date_str)]
+            else:
+                # Fetch BOTH today and tomorrow
+                now_pt = timezone.now().astimezone(tz_pt)
+                today = now_pt.date()
+                tomorrow = today + timedelta(days=1)
+                dates_to_fetch = [today, tomorrow]
+
+            all_summary = []
+            total_raw = 0
+            dates_with_awards = []
+
+            for trade_dt in dates_to_fetch:
+                raw_count, summaries, hourly = self._fetch_and_store_date(
+                    trade_dt, fetch_mfp1_da_awards, aggregate_hourly_mw
+                )
+                total_raw += raw_count
+                all_summary.extend(summaries)
+                if summaries:
+                    dates_with_awards.append(trade_dt.isoformat())
+                    logger.info(f"DA awards for {trade_dt}: {len(summaries)} hours, "
+                                f"avg={hourly.mean():.1f} MW" if hourly is not None else "")
+
+            if not all_summary:
+                return Response({
+                    'status': 'success',
+                    'trade_dates': [d.isoformat() for d in dates_to_fetch],
+                    'has_awards': False,
+                    'message': f'No DA awards available for {", ".join(d.isoformat() for d in dates_to_fetch)}.',
+                })
+
+            avg_mw = sum(s['total_mw'] for s in all_summary) / len(all_summary) if all_summary else 0
 
             return Response({
                 'status': 'success',
-                'trade_date': trade_dt.isoformat(),
+                'trade_dates': [d.isoformat() for d in dates_to_fetch],
+                'dates_with_awards': dates_with_awards,
                 'has_awards': True,
-                'raw_records': len(raw_df),
-                'hours': len(summary_records),
-                'hourly_data': summary_records,
-                'avg_mw': round(hourly_series.mean(), 1) if hourly_series is not None else 0,
-                'message': f'Fetched {len(raw_df)} award records for {trade_dt}',
+                'raw_records': total_raw,
+                'hours': len(all_summary),
+                'hourly_data': all_summary,
+                'avg_mw': round(avg_mw, 1),
+                'message': f'Fetched {total_raw} raw records. '
+                           f'Awards found for: {", ".join(dates_with_awards) or "none"}',
             })
 
         except Exception as e:

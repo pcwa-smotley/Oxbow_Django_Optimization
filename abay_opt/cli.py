@@ -10,7 +10,7 @@ from .utils import AF_PER_CFS_HOUR
 from .physics import (
     oxph_cfs_from_mw_linear, mf12_mw_from_mfra, mf12_cfs_from_mw_quadratic,
     regulated_component_gen, expected_abay_net_cfs, abay_feet_to_af,
-    normalize_mode_series  # maps 0/1 or strings -> 'GEN'/'SPILL'
+    abay_af_to_feet, normalize_mode_series  # maps 0/1 or strings -> 'GEN'/'SPILL'
 )
 from .bias import hourly_abay_error_diagnostics, expected_series_for_lookback
 
@@ -113,7 +113,13 @@ def generate_final_output(lookback, forecast, result_df, bias_cfs, outfile=None)
     # Blank out times where not a stable change
     result_df.loc[~keep_mask, 'setpoint_change_time'] = ""
 
-    # Flows/limits from hour-average MW and optimized ABAY_ft
+    # Fix elevation: the MILP PWL approximation can be inaccurate when the
+    # operating range is narrow.  Recompute ABAY_ft from the water-balance
+    # acre-feet (which ARE accurate) using the analytical quadratic inverse.
+    if 'ABAY_af' in result_df.columns and result_df['ABAY_af'].notna().any():
+        result_df['ABAY_ft'] = abay_af_to_feet(result_df['ABAY_af'])
+
+    # Flows/limits from hour-average MW and corrected ABAY_ft
     result_df['OXPH_outflow_cfs'] = oxph_cfs_from_mw_linear(result_df['OXPH_generation_MW']).values
     result_df['Head_limit_MW'] = (
         constants.OXPH_HEAD_LOSS_SLOPE * result_df['ABAY_ft']
@@ -468,6 +474,11 @@ def main():
     result_df['OXPH_setpoint_MW']   = s_over.values         # setpoint changed-to value
     result_df['OXPH_generation_MW'] = g_avg.values          # hour-average generation
     result_df['setpoint_change_time'] = change_times.values # PT clock time like '07:11 AM'
+
+    # Safety: enforce physical bounds on generation (can never be negative)
+    result_df['OXPH_generation_MW'] = result_df['OXPH_generation_MW'].clip(
+        lower=constants.OXPH_MIN_MW, upper=constants.OXPH_MAX_MW
+    )
 
     final = generate_final_output(lookback, forecast, result_df, bias_cfs, outfile=args.outfile)
 

@@ -312,16 +312,20 @@ def recalc_abay_path(
             regulated = max(term1, term2)
             known = base + regulated - off
 
-        # Apply head & min/max clamps to generation
+        # Apply head cap first, then enforce min/max bounds.
+        # Head cap limits the maximum based on elevation physics, but can go
+        # negative in pathological cases (very low known_cfs). The min/max
+        # clamp MUST run last so generation never goes below OXPH_MIN_MW.
         g = G_USED.iloc[t]
-        if clamp_to_minmax:
-            g = max(constants.OXPH_MIN_MW, min(constants.OXPH_MAX_MW, g))
 
         if clamp_to_head:
             cap = _head_limited_cap_mw(H_prev, known)
             if g > cap + 1e-9:
                 g = cap
                 VIOL_HEAD.iloc[t] = True
+
+        if clamp_to_minmax:
+            g = max(constants.OXPH_MIN_MW, min(constants.OXPH_MAX_MW, g))
 
         # Update storage
         AF_t = AF_prev + AF_PER_CFS_HOUR * (known - f * g)

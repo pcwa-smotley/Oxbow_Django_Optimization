@@ -3201,7 +3201,9 @@ function recalculateElevation(startIndex = 0) {
         constrainedGeneration = headCapMw;
       }
 
-      effectiveOxph = Math.max(0, constrainedGeneration);
+      // Enforce physical floor: generation can never go below min (head cap
+      // can produce negative values in pathological cases)
+      effectiveOxph = Math.max(ABAY_MATH.OXPH_MIN_MW, constrainedGeneration);
       row.oxph = effectiveOxph;
     } else {
       row.oxph = effectiveOxph;
@@ -6107,14 +6109,16 @@ function fetchCAISODAAwards() {
             return;
         }
         if (data.has_awards) {
+            var dates = data.dates_with_awards ? data.dates_with_awards.join(', ') : (data.trade_date || '');
             showNotification(
-                `DA Awards loaded: ${data.hours} hours, avg ${data.avg_mw} MW for ${data.trade_date}`,
+                `DA Awards (MDFKRL_2_PROJCT): ${data.hours} hours, avg ${data.avg_mw} MW [${dates}]`,
                 'success'
             );
             updateMfraSourceIndicator('da_awards');
         } else {
+            var requested = data.trade_dates ? data.trade_dates.join(', ') : (data.trade_date || '');
             showNotification(
-                `No DA awards available for ${data.trade_date}. Using persistence.`,
+                `No DA awards available for ${requested}. Using persistence.`,
                 'info'
             );
             updateMfraSourceIndicator('persistence');
@@ -6143,4 +6147,190 @@ function updateMfraSourceIndicator(source) {
         badge.textContent = 'MFRA: Persistence';
         badge.classList.add('mfra-source-persistence');
     }
+}
+
+// ── DA Awards Detail Modal ────────────────────────────────────────
+function openDaAwardsDetailModal() {
+    const backdrop = document.getElementById('daAwardsDetailBackdrop');
+    const modal = document.getElementById('daAwardsDetailModal');
+    const meta = document.getElementById('daDetailMeta');
+    const wrap = document.getElementById('daDetailTableWrap');
+    if (!modal || !backdrop) return;
+
+    // Show modal immediately with loading state
+    backdrop.classList.remove('hidden');
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => modal.classList.add('active'));
+
+    if (meta) meta.innerHTML = '<span class="da-detail-loading">Loading award detail...</span>';
+    if (wrap) wrap.innerHTML = '';
+
+    fetch('/api/caiso-da-awards/?detail=true')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                if (meta) meta.innerHTML = '';
+                if (wrap) wrap.innerHTML = '<p class="da-detail-empty">Error: ' + (data.detail || data.error) + '</p>';
+                return;
+            }
+            renderDaAwardsDetail(data);
+        })
+        .catch(err => {
+            if (meta) meta.innerHTML = '';
+            if (wrap) wrap.innerHTML = '<p class="da-detail-empty">Failed to load: ' + err.message + '</p>';
+        });
+}
+
+function closeDaAwardsDetailModal() {
+    const backdrop = document.getElementById('daAwardsDetailBackdrop');
+    const modal = document.getElementById('daAwardsDetailModal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+    if (backdrop) backdrop.classList.add('hidden');
+}
+
+function renderDaAwardsDetail(data) {
+    const meta = document.getElementById('daDetailMeta');
+    const wrap = document.getElementById('daDetailTableWrap');
+    if (!wrap) return;
+
+    if (!data.has_awards || !data.detail || !data.detail.length) {
+        if (meta) meta.innerHTML = '<strong>Trade Date:</strong> ' + (data.trade_date || '—');
+        wrap.innerHTML = '<p class="da-detail-empty">No award records found for this date. Click "Fetch DA Awards" to pull from CAISO.</p>';
+        return;
+    }
+
+    var resources = data.resources || [];
+    var detail = data.detail;
+
+    // ── Per-resource summary stats ──
+    var resStats = {}; // { resource: { sum, count, min, max } }
+    detail.forEach(function (row) {
+        if (!resStats[row.resource]) {
+            resStats[row.resource] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        }
+        var s = resStats[row.resource];
+        s.sum += row.mw;
+        s.count++;
+        if (row.mw < s.min) s.min = row.mw;
+        if (row.mw > s.max) s.max = row.mw;
+    });
+
+    // Hourly totals from summary data
+    var totalMW = 0;
+    var hourCount = data.hourly_data ? data.hourly_data.length : 0;
+    if (data.hourly_data) {
+        data.hourly_data.forEach(function (h) { totalMW += h.total_mw; });
+    }
+    var avgMW = hourCount > 0 ? (totalMW / hourCount).toFixed(1) : '—';
+
+    // ── Metadata header ──
+    if (meta) {
+        meta.innerHTML =
+            '<div class="da-meta-row">' +
+                '<span><strong>Trade Date:</strong> ' + data.trade_date + '</span>' +
+                '<span><strong>Hours:</strong> ' + hourCount + '</span>' +
+                '<span><strong>Avg Hourly Total:</strong> ' + avgMW + ' MW</span>' +
+                '<span><strong>Resources:</strong> ' + resources.length + '</span>' +
+            '</div>';
+    }
+
+    // ── Resource summary cards ──
+    var cardsHtml = '<div class="da-resource-cards">';
+    resources.forEach(function (r) {
+        var s = resStats[r];
+        var avg = s && s.count > 0 ? (s.sum / s.count).toFixed(1) : '—';
+        var min = s ? s.min.toFixed(1) : '—';
+        var max = s ? s.max.toFixed(1) : '—';
+        cardsHtml += '<div class="da-resource-card">' +
+            '<div class="da-rc-name" title="' + r + '">' + r + '</div>' +
+            '<div class="da-rc-stats">' +
+                '<span>Avg <strong>' + avg + '</strong></span>' +
+                '<span>Min <strong>' + min + '</strong></span>' +
+                '<span>Max <strong>' + max + '</strong></span>' +
+            '</div>' +
+        '</div>';
+    });
+    cardsHtml += '</div>';
+
+    // ── Resource filter dropdown ──
+    var filterHtml = '<div class="da-filter-row">' +
+        '<label for="daResourceFilter">Filter by resource:</label>' +
+        '<select id="daResourceFilter" onchange="filterDaDetailTable()">' +
+        '<option value="ALL">All Resources</option>';
+    resources.forEach(function (r) {
+        filterHtml += '<option value="' + r + '">' + r + '</option>';
+    });
+    filterHtml += '</select></div>';
+
+    // ── Vertical detail table ──
+    var tableHtml = '<table class="da-detail-table" id="daDetailTable">';
+    tableHtml += '<thead><tr>' +
+        '<th>Hour (PT)</th>' +
+        '<th>Resource</th>' +
+        '<th>MW</th>' +
+        '<th>Product</th>' +
+        '<th>Schedule</th>' +
+    '</tr></thead><tbody>';
+
+    // Group by hour, then list each resource
+    var hourOrder = [];
+    var hourSet = {};
+    detail.forEach(function (row) {
+        if (!hourSet[row.hour_pt]) {
+            hourSet[row.hour_pt] = true;
+            hourOrder.push(row.hour_pt);
+        }
+    });
+
+    hourOrder.forEach(function (hour) {
+        var hourRows = detail.filter(function (r) { return r.hour_pt === hour; });
+        var hourTotal = 0;
+        hourRows.forEach(function (r) { hourTotal += r.mw; });
+
+        hourRows.forEach(function (row, idx) {
+            var zeroClass = row.mw === 0 ? ' da-zero' : '';
+            tableHtml += '<tr class="da-row" data-resource="' + row.resource + '">';
+            // Only show hour on first row of each group
+            if (idx === 0) {
+                tableHtml += '<td class="da-hour-cell" rowspan="' + hourRows.length + '">' + hour + '</td>';
+            }
+            tableHtml += '<td class="da-resource-cell">' + row.resource + '</td>';
+            tableHtml += '<td class="da-mw-cell' + zeroClass + '">' + row.mw.toFixed(1) + '</td>';
+            tableHtml += '<td>' + (row.product_type || '') + '</td>';
+            tableHtml += '<td>' + (row.schedule_type || '') + '</td>';
+            tableHtml += '</tr>';
+        });
+
+        // Hourly total row
+        tableHtml += '<tr class="da-hour-total"><td class="da-hour-cell"></td>' +
+            '<td><strong>Hour Total</strong></td>' +
+            '<td class="da-mw-cell"><strong>' + hourTotal.toFixed(1) + '</strong></td>' +
+            '<td></td><td></td></tr>';
+    });
+
+    tableHtml += '</tbody></table>';
+
+    wrap.innerHTML = cardsHtml + filterHtml + tableHtml;
+}
+
+function filterDaDetailTable() {
+    var sel = document.getElementById('daResourceFilter');
+    var val = sel ? sel.value : 'ALL';
+    var rows = document.querySelectorAll('#daDetailTable .da-row');
+    var totals = document.querySelectorAll('#daDetailTable .da-hour-total');
+
+    rows.forEach(function (row) {
+        if (val === 'ALL' || row.dataset.resource === val) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    // Always show hour totals when "All", hide when filtering single resource
+    totals.forEach(function (row) {
+        row.style.display = val === 'ALL' ? '' : 'none';
+    });
 }

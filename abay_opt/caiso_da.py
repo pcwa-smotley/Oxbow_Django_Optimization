@@ -98,11 +98,21 @@ def fetch_mfp1_da_awards(trade_dt: date) -> Optional[pd.DataFrame]:
         return None
 
 
+MDFK_RESOURCE = 'MDFKRL_2_PROJCT'
+
+
 def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
     """
-    Filter to energy awards and sum MW across all MFP1 resources per hour.
+    Extract MDFKRL_2_PROJCT CLEARED energy awards per hour.
 
-    Returns a pd.Series indexed by interval_start (UTC datetime), values = total MW.
+    CAISO returns multiple schedule types per resource:
+      - CLEARED = the actual DA award (what we want)
+      - MARKET  = the bid that cleared (duplicate MW, don't double-count)
+      - SELF    = self-scheduled portion
+
+    We filter to resource=MDFKRL_2_PROJCT, product=EN, scheduleType=CLEARED.
+
+    Returns a pd.Series indexed by interval_start (UTC datetime), values = MW.
     """
     if awards_df is None or awards_df.empty:
         return None
@@ -110,9 +120,36 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
     try:
         df = awards_df.copy()
 
-        # Filter to energy product if the column exists
+        # Log all resources for diagnostics
+        if 'resource' in df.columns:
+            resources = df['resource'].unique().tolist()
+            logger.info(f"DA awards contain resources: {resources}")
+        if 'scheduleType' in df.columns:
+            stypes = df['scheduleType'].unique().tolist()
+            logger.info(f"DA awards contain scheduleTypes: {stypes}")
+
+        # Filter to MDFKRL_2_PROJCT resource
+        if 'resource' in df.columns:
+            mdfk_mask = df['resource'].str.upper() == MDFK_RESOURCE.upper()
+            if not mdfk_mask.any():
+                logger.warning(f"No records for resource {MDFK_RESOURCE}. "
+                               f"Available: {df['resource'].unique().tolist()}")
+                return None
+            df = df[mdfk_mask]
+            logger.info(f"Filtered to {MDFK_RESOURCE}: {len(df)} records")
+
+        # Filter to CLEARED schedule type (the actual DA award)
+        if 'scheduleType' in df.columns:
+            cleared_mask = df['scheduleType'].str.upper() == 'CLEARED'
+            if cleared_mask.any():
+                df = df[cleared_mask]
+                logger.info(f"Filtered to CLEARED: {len(df)} records")
+            else:
+                logger.warning("No CLEARED records found — using all schedule types")
+
+        # Filter to energy product
         if 'productType' in df.columns:
-            en_mask = df['productType'].str.upper().isin(['EN', 'ENERGY', 'ALL'])
+            en_mask = df['productType'].str.upper().isin(['EN', 'ENERGY'])
             if en_mask.any():
                 df = df[en_mask]
 
@@ -124,11 +161,11 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
         df['interval_start'] = pd.to_datetime(df['intervalStartTime'], utc=True)
         df['mw_value'] = pd.to_numeric(df['MW'], errors='coerce').fillna(0)
 
-        # Sum MW across all resources for each hour
+        # Sum MW per hour (should be one row per hour after filtering, but sum to be safe)
         hourly = df.groupby('interval_start')['mw_value'].sum().sort_index()
         hourly.name = 'MFRA_MW_forecast'
 
-        logger.info(f"Aggregated DA awards: {len(hourly)} hours, "
+        logger.info(f"Aggregated DA awards for {MDFK_RESOURCE}: {len(hourly)} hours, "
                      f"avg={hourly.mean():.1f} MW, range=[{hourly.min():.1f}, {hourly.max():.1f}]")
         return hourly
 

@@ -277,6 +277,7 @@
                                     <option value="river">R30 &amp; R4 River Flows</option>
                                 </select>
                                 <button id="fetchDaAwardsBtn" class="btn btn-small btn-outline" onclick="fetchCAISODAAwards()" title="Fetch CAISO DA awards for Middle Fork">Fetch DA Awards</button>
+                                <button id="daAwardsDetailBtn" class="btn btn-small btn-outline" onclick="openDaAwardsDetailModal()" title="View per-resource DA award breakdown">DA Detail</button>
                             </div>
                         </div>
                         <div class="chart-wrapper">
@@ -1023,6 +1024,24 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cancelRaftingWarning()">Cancel</button>
                 <button class="btn" id="confirmRaftingChangeBtn">OK</button>
+            </div>
+        </div>
+
+        <!-- DA Awards Detail Modal -->
+        <div class="modal-backdrop hidden" id="daAwardsDetailBackdrop"></div>
+        <div class="modal da-awards-detail-modal hidden" id="daAwardsDetailModal" role="dialog" aria-modal="true" aria-labelledby="daAwardsDetailTitle">
+            <div class="modal-header">
+                <h3 id="daAwardsDetailTitle">DA Awards Detail</h3>
+                <button class="close-btn" onclick="closeDaAwardsDetailModal()" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="da-detail-meta" id="daDetailMeta"></div>
+                <div class="da-detail-table-wrap" id="daDetailTableWrap">
+                    <p class="da-detail-empty">No award data loaded. Click "Fetch DA Awards" first.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDaAwardsDetailModal()">Close</button>
             </div>
         </div>
 

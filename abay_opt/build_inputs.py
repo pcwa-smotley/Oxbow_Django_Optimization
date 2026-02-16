@@ -138,9 +138,11 @@ def build_inputs(horizon_hours: int = 24,
     forecast['is_summer_window'] = flags
 
     smooth_w = []
+    w_day = getattr(constants, 'SMOOTHING_WEIGHT_DAY', 100.0)
+    w_night = getattr(constants, 'SMOOTHING_WEIGHT_NIGHT', 500.0)
     for ts in forecast.index:
         ts_pt = ts.tz_convert(constants.PACIFIC_TZ)
-        smooth_w.append(1.0 if (8 <= ts_pt.hour <= 20) else 10.0)
+        smooth_w.append(w_day if (8 <= ts_pt.hour <= 20) else w_night)
     forecast['smooth_weight'] = smooth_w
 
     return lookback, forecast, current_state, bias_cfs, mfra_source
