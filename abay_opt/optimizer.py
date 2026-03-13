@@ -1,4 +1,5 @@
 # abay_opt/optimizer.py
+import logging
 import pandas as pd
 import numpy as np
 from typing import List, Tuple
@@ -8,10 +9,12 @@ from pulp import (
 )
 from . import constants
 from .physics import (
-    abay_feet_to_af, mf12_mw_from_mfra, mf12_cfs_from_mw_quadratic,
+    abay_feet_to_af, abay_af_to_feet, mf12_mw_from_mfra, mf12_cfs_from_mw_quadratic,
     regulated_component_gen
 )
 from .utils import AF_PER_CFS_HOUR
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class OptimizeConfig:
@@ -21,8 +24,8 @@ class OptimizeConfig:
     oxph_max_mw: float = None
     ramp_mw_per_hour: float = None
     summer_setpoint_floor_mw: float = 6.0
-    smoothing_weight_day: float = 1.0
-    smoothing_weight_night: float = 10.0
+    smoothing_weight_day: float = 100.0
+    smoothing_weight_night: float = 500.0
     slack_penalty: float = 1e6  # elevation violation penalty
     # NEW: rafting‑window tracking/floor penalties
     summer_tracking_weight: float = 1000.0      # penalty on (setpoint - generation)+ in MW
@@ -80,10 +83,44 @@ def build_and_solve(forecast_df: pd.DataFrame,
     H_max = forecast_df['FLOAT_FT'].astype(float) - cfg.float_buffer_ft
     H_min = pd.Series(cfg.min_elev_ft, index=idx)
 
-    # Common breakpoints for PWL ft<->AF mapping over the reachable band
-    global_h_min = float(min(H_min.min(), initial_elev_ft))
-    global_h_max = float(max(H_max.max(), initial_elev_ft))
-    H_pts, A_pts = piecewise_storage_breakpoints(global_h_min, global_h_max, n_breaks=14)
+    # --- Water balance parameters (computed early for PWL range estimation) ---
+    oxph_cfs_factor = constants.OXPH_MW_TO_CFS_FACTOR
+    oxph_cfs_offset = constants.OXPH_MW_TO_CFS_OFFSET
+    known_GEN = base + regulated - oxph_cfs_offset
+    known_SPILL = base + mf12_cfs - oxph_cfs_offset
+    A0 = float(abay_feet_to_af(initial_elev_ft))
+
+    # --- PWL range: must cover ALL elevations the solver might explore ---
+    # Previously used H_max (float setpoint - buffer) as the upper bound, which
+    # made the range too narrow during high-inflow events (e.g. storms + MFRA
+    # persistence spike).  The solver couldn't represent AF values above the
+    # upper PWL limit, causing infeasibility and garbage elevation output.
+    # Fix: estimate worst-case high/low AF by assuming min/max generation over
+    # the entire horizon, convert back to feet, and add margin.
+    cum_hi, cum_lo, peak_af, trough_af = A0, A0, A0, A0
+    for t in range(T):
+        kn = float(known_GEN.iloc[t]) if mode.iloc[t] != 'SPILL' else float(known_SPILL.iloc[t])
+        cum_hi += AF_PER_CFS_HOUR * (kn - oxph_cfs_factor * cfg.oxph_min_mw)
+        cum_lo += AF_PER_CFS_HOUR * (kn - oxph_cfs_factor * cfg.oxph_max_mw)
+        peak_af = max(peak_af, cum_hi)
+        trough_af = min(trough_af, cum_lo)
+
+    pwl_upper_ft = float(abay_af_to_feet(peak_af)) + 2.0
+    pwl_lower_ft = float(abay_af_to_feet(max(trough_af, 1.0))) - 2.0
+
+    global_h_min = min(float(H_min.min()), initial_elev_ft, pwl_lower_ft)
+    global_h_max = max(float(H_max.max()), initial_elev_ft, pwl_upper_ft)
+    # Guarantee minimum 10 ft range for numerical stability
+    if global_h_max - global_h_min < 10.0:
+        mid = (global_h_max + global_h_min) / 2.0
+        global_h_min = mid - 5.0
+        global_h_max = mid + 5.0
+
+    logger.info(f"PWL range: {global_h_min:.1f} - {global_h_max:.1f} ft "
+                f"(initial={initial_elev_ft:.1f}, float_max={float(H_max.max()):.1f}, "
+                f"peak_af={peak_af:.0f}, trough_af={trough_af:.0f})")
+
+    H_pts, A_pts = piecewise_storage_breakpoints(global_h_min, global_h_max, n_breaks=24)
     n_pts = len(H_pts); n_seg = n_pts - 1
 
     # Model
@@ -91,7 +128,7 @@ def build_and_solve(forecast_df: pd.DataFrame,
 
     # Decision vars
     g = LpVariable.dicts("gen_MW", range(T), lowBound=cfg.oxph_min_mw, upBound=cfg.oxph_max_mw, cat=LpContinuous)
-    s = LpVariable.dicts("setpoint_MW", range(T), lowBound=0, upBound=10.0, cat=LpContinuous)
+    s = LpVariable.dicts("setpoint_MW", range(T), lowBound=cfg.oxph_min_mw, upBound=cfg.oxph_max_mw, cat=LpContinuous)
     H = LpVariable.dicts("ABAY_ft", range(T), lowBound=0, upBound=2000, cat=LpContinuous)
     A = LpVariable.dicts("ABAY_af", range(T), lowBound=0, upBound=1e7, cat=LpContinuous)
 
@@ -99,9 +136,12 @@ def build_and_solve(forecast_df: pd.DataFrame,
     lam = {(t, i): LpVariable(f"lam_{t}_{i}", lowBound=0, upBound=1, cat=LpContinuous) for t in range(T) for i in range(n_pts)}
     seg = {(t, k): LpVariable(f"seg_{t}_{k}", lowBound=0, upBound=1, cat=LpBinary) for t in range(T) for k in range(n_seg)}
 
-    # Elevation slack (hardly ever used; massive penalty)
-    slack_hi = LpVariable.dicts("slack_high", range(T), lowBound=0, upBound=10.0, cat=LpContinuous)
-    slack_lo = LpVariable.dicts("slack_low", range(T), lowBound=0, upBound=10.0, cat=LpContinuous)
+    # Elevation slack (hardly ever used; massive penalty keeps it near zero)
+    # Bound must cover the full PWL range so the solver stays feasible under
+    # extreme inflows even when max generation can't prevent elevation rise.
+    slack_range = global_h_max - global_h_min
+    slack_hi = LpVariable.dicts("slack_high", range(T), lowBound=0, upBound=slack_range, cat=LpContinuous)
+    slack_lo = LpVariable.dicts("slack_low", range(T), lowBound=0, upBound=slack_range, cat=LpContinuous)
 
     # Smoothing (setpoint) via pos/neg parts
     dpos = LpVariable.dicts("ds_pos", range(T), lowBound=0, upBound=cfg.oxph_max_mw, cat=LpContinuous)
@@ -111,9 +151,6 @@ def build_and_solve(forecast_df: pd.DataFrame,
     shortfall = LpVariable.dicts("summer_shortfall", range(T), lowBound=0, upBound=cfg.oxph_max_mw, cat=LpContinuous)
     # NEW: soft floor slack for g >= 6.0 during rafting window
     floor_slack = LpVariable.dicts("summer_floor_slack", range(T), lowBound=0, upBound=10.0, cat=LpContinuous)
-
-    # Initial AF
-    A0 = float(abay_feet_to_af(initial_elev_ft))
 
     # PWL mapping & bounds
     for t in range(T):
@@ -133,13 +170,8 @@ def build_and_solve(forecast_df: pd.DataFrame,
         # Head limit: g_t <= 0.0912*H_t - 101.42  (constants)
         m += g[t] <= constants.OXPH_HEAD_LOSS_SLOPE * H[t] + constants.OXPH_HEAD_LOSS_INTERCEPT, f"head_limit_{t}"
 
-    # Water balance (AF)
-    oxph_cfs_factor = constants.OXPH_MW_TO_CFS_FACTOR   # linear MW->cfs per goal doc
-    oxph_cfs_offset = constants.OXPH_MW_TO_CFS_OFFSET
-
-    known_GEN = base + regulated - oxph_cfs_offset
-    known_SPILL = base + mf12_cfs - oxph_cfs_offset
-
+    # Water balance (AF) — oxph_cfs_factor, known_GEN, known_SPILL, A0
+    # were computed above (before PWL range estimation).
     for t in range(T):
         known_t = float(known_GEN.iloc[t]) if mode.iloc[t] != 'SPILL' else float(known_SPILL.iloc[t])
         if t == 0:
@@ -192,10 +224,28 @@ def build_and_solve(forecast_df: pd.DataFrame,
 
     status_name = LpStatus[m.status]
 
-    # Results
+    if status_name != 'Optimal':
+        logger.warning(f"Solver returned non-optimal status: {status_name}")
+
+    # Results — extract values and enforce physical bounds.
+    # PuLP may return None (infeasible) or values outside declared bounds
+    # (relaxation / non-optimal termination).
+    raw_gen = [value(g[t]) for t in range(T)]
+    raw_sp  = [value(s[t]) for t in range(T)]
+
+    def _clamp_gen(v):
+        if v is None or np.isnan(v):
+            return cfg.oxph_min_mw
+        return max(cfg.oxph_min_mw, min(cfg.oxph_max_mw, float(v)))
+
+    def _clamp_sp(v):
+        if v is None or np.isnan(v):
+            return cfg.oxph_min_mw
+        return max(cfg.oxph_min_mw, min(cfg.oxph_max_mw, float(v)))
+
     out = pd.DataFrame(index=idx)
-    out['OXPH_generation_MW'] = [value(g[t]) for t in range(T)]
-    out['OXPH_setpoint_MW']   = [value(s[t]) for t in range(T)]
+    out['OXPH_generation_MW'] = [_clamp_gen(v) for v in raw_gen]
+    out['OXPH_setpoint_MW']   = [_clamp_sp(v) for v in raw_sp]
     out['ABAY_ft']            = [value(H[t]) for t in range(T)]
     out['ABAY_af']            = [value(A[t]) for t in range(T)]
     out['SolverStatus']       = status_name

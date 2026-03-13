@@ -273,6 +273,12 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
             result_df['OXPH_generation_MW'] = g_avg.values
             result_df['setpoint_change_time'] = change_times.values
 
+            # Safety: enforce physical bounds on generation (can never be negative)
+            result_df['OXPH_generation_MW'] = result_df['OXPH_generation_MW'].clip(
+                lower=optimization_constants.OXPH_MIN_MW,
+                upper=optimization_constants.OXPH_MAX_MW,
+            )
+
             # Build final combined DataFrame using CLI helper
             final_output_df = cli.generate_final_output(
                 lookback_df, forecast_df, result_df, r_bias_cfs

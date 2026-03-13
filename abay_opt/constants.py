@@ -93,6 +93,12 @@ ABAY_MAX_ELEV_BUFFER_FT = 1.0 # Buffer to prevent overfilling and hitting minimu
 OXPH_MIN_MW = 0.8
 OXPH_MAX_MW = 5.8
 OXPH_RAMP_RATE_MW_PER_MIN = 0.042
+
+# Smoothing weights: penalize magnitude of setpoint changes (MW).
+# Higher = fewer/smaller changes.  Must be << slack_penalty (1e6) and
+# << summer_tracking_weight (1000) so rafting ramp-ups still happen.
+SMOOTHING_WEIGHT_DAY = 100.0    # 8 AM – 8 PM PT (changes easier during staffed hours)
+SMOOTHING_WEIGHT_NIGHT = 500.0  # 8 PM – 8 AM PT (strongly discourage overnight changes)
 # Derived: Max MW change per simulation interval
 OXPH_MAX_RAMP_PER_INTERVAL = OXPH_RAMP_RATE_MW_PER_MIN * SIMULATION_INTERVAL_MINUTES
 OXPH_MW_TO_CFS_FACTOR = 163.73 # Used if OXPH_CFS_METHOD is 'equation'

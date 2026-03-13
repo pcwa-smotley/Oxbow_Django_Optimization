@@ -144,10 +144,15 @@ def forecasts_to_dataframe(response_data, site_short_name, forecast_source, targ
 
         rows = []
         # We are interested in the target_column_name specifically for the main forecast value
-        series_values = forecast_series_data_dict.get(target_column_name)
-
-        if not series_values:
+        if target_column_name not in forecast_series_data_dict:
             logger.warning(f"Target column '{target_column_name}' not found in data for {site_short_name} ({forecast_source}). Available keys in data: {list(forecast_series_data_dict.keys())}")
+            return pd.DataFrame()
+
+        series_values = forecast_series_data_dict[target_column_name]
+
+        if series_values is None or (isinstance(series_values, (list, tuple)) and len(series_values) == 0):
+            logger.warning(f"Target column '{target_column_name}' exists but contains no data (null/empty) for {site_short_name} ({forecast_source}). "
+                           f"The upstream API returned an empty series — this may indicate the forecast has not been issued yet for the requested period.")
             return pd.DataFrame()
 
         for i, vt_str in enumerate(valid_times):
@@ -170,8 +175,8 @@ def forecasts_to_dataframe(response_data, site_short_name, forecast_source, targ
                     logger.warning(f"Non-numeric value '{series_values[i]}' for {target_column_name} at index {i} in validTime {vt_str} for {site_short_name}")
             else:
                 row_data[output_col_name_intermediate] = np.nan
-                if not series_values or i >= len(series_values):
-                     logger.debug(f"Missing or incomplete data for {target_column_name} at index {i} in validTime {vt_str} for {site_short_name}")
+                if i >= len(series_values):
+                    logger.debug(f"Missing or incomplete data for {target_column_name} at index {i} in validTime {vt_str} for {site_short_name}")
 
             rows.append(row_data)
 
