@@ -208,7 +208,7 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
         hourly = df.groupby('interval_start')['mw_value'].sum().sort_index()
         hourly.name = 'MFRA_MW_forecast'
 
-        logger.info(f"Aggregated DA awards for {MDFK_RESOURCE}: {len(hourly)} hours, "
+        logger.info(f"Aggregated DA awards for {MFRA_RESOURCE}: {len(hourly)} hours, "
                      f"avg={hourly.mean():.1f} MW, range=[{hourly.min():.1f}, {hourly.max():.1f}]")
         return hourly
 
