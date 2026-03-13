@@ -26,6 +26,7 @@ let actualsApplied = false;
 let forecastHot = null;
 let suppressForecastTableChange = false;
 let forecastTableActualCount = 0;
+let chartEditState = null; // { dataIndex, field } — active chart point edit
 
 function markForecastDirty(forceValue) {
   if (typeof forceValue === "boolean") {
@@ -1345,6 +1346,8 @@ function initializeCharts() {
     oxphOpt.yAxis.min = 0;
     oxphChart.setOption(oxphOpt);
     oxphChart.group = 'dashboardSync';
+    // Chart point click-to-edit (use getZr for reliable click detection on lines)
+    attachChartClickToEdit(oxphChart);
   }
 
   // Connect elevation and OXPH charts for synced tooltips
@@ -1371,6 +1374,7 @@ function initializeCharts() {
   if (typeof registerChartReinit === 'function' && !window._mainChartsRegistered) {
     registerChartReinit(function () {
       chartsConnected = false;
+      closeChartEditPopup();
       // Dispose drill-down chart if open during theme switch
       if (schematicDrillDownChart) {
         schematicDrillDownChart.dispose();
@@ -2170,6 +2174,327 @@ function refreshPowerChart(animationMode = "default") {
   }, { notMerge: true, lazyUpdate: animationMode === 'none' });
 
   renderPowerChartLegend(filtered);
+}
+
+// ============================================
+// CHART POINT EDIT POPUP
+// ============================================
+
+function handlePowerChartZrClick(e, chartInstance) {
+  // Convert pixel to data index using ECharts coordinate system
+  var pointInGrid = chartInstance.convertFromPixel('grid', [e.offsetX, e.offsetY]);
+  if (!pointInGrid) return;
+
+  var dataIndex = Math.round(pointInGrid[0]);
+  var labels = latestChartData?.labels;
+  if (!labels || dataIndex < 0 || dataIndex >= labels.length) return;
+
+  // Determine editable field based on chart mode
+  var mode = powerChartMode;
+  var field = null;
+  if (mode === 'oxph') field = 'setpoint';
+  else if (mode === 'mfra') field = 'mfra';
+  else return; // river mode — skip for v1
+
+  // Guard: must be a forecast row
+  if (dataIndex < forecastTableActualCount) {
+    showNotification('Cannot edit historical data points', 'warning');
+    return;
+  }
+
+  if (!Array.isArray(forecastData) || !forecastData[dataIndex]) return;
+
+  openChartEditPopup(dataIndex, field, e.offsetX, e.offsetY);
+}
+
+function openChartEditPopup(dataIndex, field, chartX, chartY) {
+  const popup = document.getElementById('chartEditPopup');
+  if (!popup) return;
+
+  const config = EDITABLE_FIELD_CONFIG[field];
+  const row = forecastData[dataIndex];
+  if (!config || !row) return;
+
+  // Store state with original value for reset
+  chartEditState = { dataIndex, field, originalValue: row[field] };
+
+  // Populate all fields
+  populateChartEditFields(dataIndex, field);
+
+  // Position popup near the click point
+  positionChartEditPopup(popup, chartX, chartY);
+
+  // Show with animation
+  popup.classList.remove('hidden');
+  requestAnimationFrame(function() { popup.classList.add('visible'); });
+
+  // Focus and select input
+  var input = document.getElementById('chartEditValue');
+  setTimeout(function() { input.focus(); input.select(); }, 120);
+}
+
+function populateChartEditFields(dataIndex, field) {
+  var config = EDITABLE_FIELD_CONFIG[field];
+  var row = forecastData[dataIndex];
+  if (!config || !row) return;
+
+  var currentValue = row[field];
+  var label = EDITABLE_FIELD_LABELS[field] || field;
+  var timeLabel = latestChartData?.labels?.[dataIndex] || '';
+
+  document.getElementById('chartEditTitle').textContent = 'Edit ' + label;
+  document.getElementById('chartEditTime').textContent = timeLabel;
+
+  var input = document.getElementById('chartEditValue');
+  input.value = currentValue != null ? currentValue : '';
+  input.step = config.step || '1';
+  input.min = config.min != null ? config.min : '';
+  input.max = config.max != null ? config.max : '';
+  input.inputMode = config.decimals === 0 ? 'numeric' : 'decimal';
+
+  document.getElementById('chartEditUnit').textContent =
+    (field === 'setpoint' || field === 'mfra') ? 'MW' : 'CFS';
+
+  // Configure range slider bounds
+  var slider = document.getElementById('chartEditRangeSlider');
+  var maxBack = Math.min(dataIndex - forecastTableActualCount, 24);
+  var maxFwd = Math.min(forecastData.length - 1 - dataIndex, 24);
+  slider.min = -maxBack;
+  slider.max = maxFwd;
+  slider.value = 0;
+  updateChartEditRangeLabels(0);
+
+  // Update nav button states
+  var prevBtn = document.getElementById('chartEditPrevHour');
+  var nextBtn = document.getElementById('chartEditNextHour');
+  if (prevBtn) prevBtn.disabled = (dataIndex <= forecastTableActualCount);
+  if (nextBtn) nextBtn.disabled = (dataIndex >= forecastData.length - 1);
+}
+
+function navigateChartEditHour(direction) {
+  if (!chartEditState) return;
+  var newIndex = chartEditState.dataIndex + direction;
+
+  // Can't go into actuals or past end
+  if (newIndex < forecastTableActualCount || newIndex >= forecastData.length) return;
+
+  chartEditState.dataIndex = newIndex;
+  chartEditState.originalValue = forecastData[newIndex][chartEditState.field];
+  populateChartEditFields(newIndex, chartEditState.field);
+
+  // Re-focus input
+  var input = document.getElementById('chartEditValue');
+  if (input) { input.focus(); input.select(); }
+}
+
+function resetChartEditValue() {
+  if (!chartEditState) return;
+  var input = document.getElementById('chartEditValue');
+  if (input && chartEditState.originalValue != null) {
+    input.value = chartEditState.originalValue;
+    input.focus();
+    input.select();
+  }
+}
+
+function positionChartEditPopup(popup, chartX, chartY) {
+  const chartDom = document.getElementById('oxphChart');
+  if (!chartDom) return;
+
+  const chartRect = chartDom.getBoundingClientRect();
+  const popupWidth = 280;
+  const popupHeight = 260;
+
+  // Convert chart-local coords to page coords
+  var pageX = chartRect.left + (chartX || chartRect.width / 2);
+  var pageY = chartRect.top + (chartY || chartRect.height / 2);
+
+  // Show popup above-right of click point
+  var left = pageX + 16;
+  var top = pageY - popupHeight - 8;
+
+  // Clamp to viewport
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  if (left + popupWidth > vw - 12) left = pageX - popupWidth - 16;
+  if (left < 12) left = 12;
+  if (top < 12) top = pageY + 20;
+  if (top + popupHeight > vh - 12) top = vh - popupHeight - 12;
+
+  popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
+}
+
+function closeChartEditPopup() {
+  const popup = document.getElementById('chartEditPopup');
+  if (!popup) return;
+  popup.classList.remove('visible');
+  setTimeout(function() { popup.classList.add('hidden'); }, 200);
+  chartEditState = null;
+}
+
+function updateChartEditRangeLabels(sliderValue) {
+  var val = parseInt(sliderValue) || 0;
+  var backLabel = document.getElementById('chartEditRangeBackLabel');
+  var fwdLabel = document.getElementById('chartEditRangeFwdLabel');
+  var info = document.getElementById('chartEditRangeInfo');
+
+  if (val < 0) {
+    backLabel.textContent = val + 'h';
+    fwdLabel.textContent = '+0h';
+    info.textContent = 'Editing ' + (Math.abs(val) + 1) + ' hours (backward)';
+  } else if (val > 0) {
+    backLabel.textContent = '-0h';
+    fwdLabel.textContent = '+' + val + 'h';
+    info.textContent = 'Editing ' + (val + 1) + ' hours (forward)';
+  } else {
+    backLabel.textContent = '-0h';
+    fwdLabel.textContent = '+0h';
+    info.textContent = 'Editing 1 hour';
+  }
+}
+
+function applyChartEdit() {
+  if (!chartEditState) return;
+  var dataIndex = chartEditState.dataIndex;
+  var field = chartEditState.field;
+  var input = document.getElementById('chartEditValue');
+  var slider = document.getElementById('chartEditRangeSlider');
+  var newValue = parseFloat(input.value);
+  var rangeVal = parseInt(slider.value) || 0;
+
+  if (isNaN(newValue)) {
+    showNotification('Please enter a valid number', 'warning');
+    return;
+  }
+
+  // Determine affected range
+  var startIdx, endIdx;
+  if (rangeVal < 0) {
+    startIdx = Math.max(dataIndex + rangeVal, forecastTableActualCount);
+    endIdx = dataIndex;
+  } else {
+    startIdx = dataIndex;
+    endIdx = Math.min(dataIndex + rangeVal, forecastData.length - 1);
+  }
+
+  // Apply the value to each row in range
+  for (var i = startIdx; i <= endIdx; i++) {
+    var oldValue = forecastData[i][field];
+    applyForecastTableValue(i, field, newValue, oldValue);
+  }
+
+  // Run the same pipeline as table edits
+  recalculateElevation(startIdx);
+  updateCharts();
+  markForecastDirty();
+
+  // Sync Handsontable
+  if (forecastHot) {
+    forecastHot.render();
+  }
+
+  var label = EDITABLE_FIELD_LABELS[field] || field;
+  var count = endIdx - startIdx + 1;
+  showNotification(
+    'Updated ' + label + ' to ' + newValue + ' for ' + count + ' hour' + (count > 1 ? 's' : ''),
+    'success'
+  );
+
+  closeChartEditPopup();
+}
+
+function attachChartClickToEdit(chartInstance) {
+  var zr = chartInstance.getZr();
+  var longPressTimer = null;
+  var touchStartPos = null;
+  var isLongPress = false;
+
+  // Desktop: click on chart grid area
+  zr.on('click', function(e) {
+    if (isLongPress) { isLongPress = false; return; }
+    // Only handle clicks inside the grid area
+    var pointInGrid = chartInstance.convertFromPixel('grid', [e.offsetX, e.offsetY]);
+    if (!pointInGrid) return;
+    // Check the click is within reasonable Y bounds (not on axis labels etc.)
+    var gridRect = chartInstance.getModel().getComponent('grid', 0)?.coordinateSystem?.getRect?.();
+    if (gridRect) {
+      if (e.offsetX < gridRect.x || e.offsetX > gridRect.x + gridRect.width ||
+          e.offsetY < gridRect.y || e.offsetY > gridRect.y + gridRect.height) return;
+    }
+    handlePowerChartZrClick(e, chartInstance);
+  });
+
+  // Mobile: long-press for touch devices
+  zr.on('mousedown', function(e) {
+    if (!('ontouchstart' in window)) return;
+    isLongPress = false;
+    touchStartPos = { x: e.offsetX, y: e.offsetY };
+    longPressTimer = setTimeout(function() {
+      isLongPress = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      handlePowerChartZrClick(e, chartInstance);
+    }, 500);
+  });
+
+  zr.on('mouseup', function() {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  });
+
+  zr.on('mousemove', function(e) {
+    if (touchStartPos && longPressTimer) {
+      var dx = e.offsetX - touchStartPos.x;
+      var dy = e.offsetY - touchStartPos.y;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+  });
+}
+
+function initChartEditListeners() {
+  var closeBtn = document.getElementById('chartEditClose');
+  var cancelBtn = document.getElementById('chartEditCancel');
+  var applyBtn = document.getElementById('chartEditApply');
+  var valueInput = document.getElementById('chartEditValue');
+  var rangeSlider = document.getElementById('chartEditRangeSlider');
+
+  var resetBtn = document.getElementById('chartEditReset');
+  var prevBtn = document.getElementById('chartEditPrevHour');
+  var nextBtn = document.getElementById('chartEditNextHour');
+
+  if (closeBtn) closeBtn.addEventListener('click', closeChartEditPopup);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeChartEditPopup);
+  if (applyBtn) applyBtn.addEventListener('click', applyChartEdit);
+  if (resetBtn) resetBtn.addEventListener('click', resetChartEditValue);
+  if (prevBtn) prevBtn.addEventListener('click', function() { navigateChartEditHour(-1); });
+  if (nextBtn) nextBtn.addEventListener('click', function() { navigateChartEditHour(1); });
+
+  if (valueInput) {
+    valueInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyChartEdit(); }
+      if (e.key === 'Escape') { e.preventDefault(); closeChartEditPopup(); }
+    });
+  }
+
+  if (rangeSlider) {
+    rangeSlider.addEventListener('input', function() {
+      updateChartEditRangeLabels(this.value);
+    });
+  }
+
+  // Close popup when clicking outside
+  document.addEventListener('mousedown', function(e) {
+    var popup = document.getElementById('chartEditPopup');
+    if (!popup || popup.classList.contains('hidden')) return;
+    if (popup.contains(e.target)) return;
+    // Don't close if clicking on the chart itself (new click will handle it)
+    var chartDom = document.getElementById('oxphChart');
+    if (chartDom && chartDom.contains(e.target)) return;
+    closeChartEditPopup();
+  });
 }
 
 // Add this to your initializeCharts() function after the existing charts
@@ -5250,6 +5575,7 @@ function updateSeasonStart() {
 // Initialize season start on page load
 document.addEventListener('DOMContentLoaded', function() {
   updateSeasonStart();
+  initChartEditListeners();
 });
 
 // Save parameters

@@ -1699,6 +1699,323 @@ body {
     padding: 0;
 }
 
+/* ============================================
+   Chart Point Edit Popup
+   ============================================ */
+.chart-edit-popup {
+    position: fixed;
+    z-index: 1100;
+    width: 280px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    padding: 0;
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    font-family: inherit;
+}
+
+.chart-edit-popup.visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+}
+
+.chart-edit-popup.hidden {
+    display: none;
+}
+
+.chart-edit-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px 6px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.chart-edit-popup-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+}
+
+.chart-edit-popup-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.5;
+    padding: 0 4px;
+    line-height: 1;
+    transition: opacity 0.15s;
+}
+.chart-edit-popup-close:hover { opacity: 1; }
+
+.chart-edit-popup-body {
+    padding: 10px 14px 6px;
+}
+
+.chart-edit-time-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.chart-edit-time {
+    font-size: 0.78rem;
+    opacity: 0.7;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    min-width: 110px;
+    text-align: center;
+}
+
+.chart-edit-nav-btn {
+    background: none;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 6px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.65rem;
+    color: inherit;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+    padding: 0;
+}
+.chart-edit-nav-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.2);
+}
+.chart-edit-nav-btn:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+}
+
+.chart-edit-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.chart-edit-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    min-width: 40px;
+}
+
+.chart-edit-input {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1.5px solid #d0d5dd;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    outline: none;
+    background: #fff;
+    color: #1a1a2e;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.chart-edit-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.chart-edit-unit {
+    font-size: 0.78rem;
+    font-weight: 500;
+    opacity: 0.55;
+    min-width: 28px;
+}
+
+.chart-edit-range-section {
+    margin-top: 2px;
+}
+
+.chart-edit-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    opacity: 0.45;
+    margin-bottom: 4px;
+}
+.chart-edit-range-center {
+    font-weight: 600;
+    opacity: 1;
+}
+
+.chart-edit-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(to right, #667eea 0%, #e0e0e0 45%, #e0e0e0 55%, #667eea 100%);
+    outline: none;
+    border-radius: 3px;
+    cursor: pointer;
+    margin: 4px 0;
+}
+.chart-edit-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #667eea;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), 0 0 6px rgba(102, 126, 234, 0.3);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.chart-edit-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 10px rgba(102, 126, 234, 0.5);
+}
+.chart-edit-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: #667eea;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #fff;
+}
+
+.chart-edit-range-info {
+    text-align: center;
+    font-size: 0.72rem;
+    opacity: 0.5;
+    margin-top: 2px;
+}
+
+.chart-edit-popup-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 14px 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.chart-edit-apply {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    font-weight: 600;
+    border: none !important;
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.chart-edit-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.chart-edit-reset {
+    background: none !important;
+    border: 1px solid rgba(0, 0, 0, 0.15) !important;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 0.75rem;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity 0.15s, border-color 0.15s;
+}
+.chart-edit-reset:hover {
+    opacity: 1;
+    border-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* --- Dark theme: Chart Edit Popup --- */
+[data-theme="dark"] .chart-edit-popup {
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.6),
+        0 0 30px rgba(0, 212, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .chart-edit-popup-header {
+    border-bottom-color: rgba(0, 212, 255, 0.12);
+}
+
+[data-theme="dark"] .chart-edit-popup-title {
+    background: linear-gradient(135deg, #00d4ff, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+[data-theme="dark"] .chart-edit-input {
+    background: rgba(10, 14, 26, 0.6);
+    border-color: rgba(0, 212, 255, 0.25);
+    color: #f1f5f9;
+}
+[data-theme="dark"] .chart-edit-input:focus {
+    border-color: #00d4ff;
+    box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12), 0 0 14px rgba(0, 212, 255, 0.08);
+}
+
+[data-theme="dark"] .chart-edit-slider {
+    background: linear-gradient(to right, #00d4ff 0%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.08) 55%, #00d4ff 100%);
+}
+[data-theme="dark"] .chart-edit-slider::-webkit-slider-thumb {
+    background: #00d4ff;
+    border-color: #0f172a;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 10px rgba(0, 212, 255, 0.4);
+}
+[data-theme="dark"] .chart-edit-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 212, 255, 0.6);
+}
+
+[data-theme="dark"] .chart-edit-popup-footer {
+    border-top-color: rgba(0, 212, 255, 0.12);
+}
+
+[data-theme="dark"] .chart-edit-apply {
+    background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%) !important;
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+}
+[data-theme="dark"] .chart-edit-apply:hover {
+    box-shadow: 0 4px 16px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2);
+}
+
+[data-theme="dark"] .chart-edit-nav-btn {
+    border-color: rgba(0, 212, 255, 0.2);
+    color: #94a3b8;
+}
+[data-theme="dark"] .chart-edit-nav-btn:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: rgba(0, 212, 255, 0.4);
+    color: #00d4ff;
+}
+
+[data-theme="dark"] .chart-edit-reset {
+    border-color: rgba(0, 212, 255, 0.2) !important;
+    color: #94a3b8;
+}
+[data-theme="dark"] .chart-edit-reset:hover {
+    border-color: rgba(0, 212, 255, 0.4) !important;
+    color: #00d4ff;
+}
+
 .modal.hidden,
 .modal-backdrop.hidden {
     display: none;

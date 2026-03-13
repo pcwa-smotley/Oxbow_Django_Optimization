@@ -1266,4 +1266,42 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         </div>
 
+        <!-- Chart Point Edit Popup -->
+        <div class="chart-edit-popup hidden" id="chartEditPopup">
+            <div class="chart-edit-popup-header">
+                <span class="chart-edit-popup-title" id="chartEditTitle">Edit Setpoint</span>
+                <button class="chart-edit-popup-close" id="chartEditClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="chart-edit-popup-body">
+                <div class="chart-edit-time-nav">
+                    <button class="chart-edit-nav-btn" id="chartEditPrevHour" aria-label="Previous hour">&#9664;</button>
+                    <span class="chart-edit-time" id="chartEditTime">Mar 14 09:00</span>
+                    <button class="chart-edit-nav-btn" id="chartEditNextHour" aria-label="Next hour">&#9654;</button>
+                </div>
+                <div class="chart-edit-input-row">
+                    <label for="chartEditValue" class="chart-edit-label">Value</label>
+                    <input type="number" id="chartEditValue" class="chart-edit-input"
+                           step="0.1" min="0" max="6" autocomplete="off" inputmode="decimal">
+                    <span class="chart-edit-unit" id="chartEditUnit">MW</span>
+                </div>
+                <div class="chart-edit-range-section">
+                    <label class="chart-edit-label">Apply Range</label>
+                    <div class="chart-edit-range-labels">
+                        <span id="chartEditRangeBackLabel">-0h</span>
+                        <span class="chart-edit-range-center">This hour</span>
+                        <span id="chartEditRangeFwdLabel">+0h</span>
+                    </div>
+                    <input type="range" id="chartEditRangeSlider" class="chart-edit-slider"
+                           min="-24" max="24" value="0" step="1">
+                    <div class="chart-edit-range-info" id="chartEditRangeInfo">Editing 1 hour</div>
+                </div>
+            </div>
+            <div class="chart-edit-popup-footer">
+                <button class="btn btn-small chart-edit-reset" id="chartEditReset" title="Reset to original value">Reset</button>
+                <span style="flex:1"></span>
+                <button class="btn btn-small btn-secondary" id="chartEditCancel">Cancel</button>
+                <button class="btn btn-small btn-primary chart-edit-apply" id="chartEditApply">Apply</button>
+            </div>
+        </div>
+
         <!-- Loading Overlay -->
