@@ -2225,6 +2225,7 @@ class RefreshPIDataView(APIView):
             return Response({'error': 'Failed to refresh PI data', 'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@login_required
 def dashboard_view(request):
     """Serve the main dashboard HTML page"""
     return render(request, 'dashboard.html', {
@@ -2546,6 +2547,7 @@ def health_check(request):
         'optimization_modules_loaded': _optimization_modules_loaded
     })
 
+@login_required
 def dashboard_data(request):
     """Consolidated dashboard data endpoint"""
     dashboard_view = DashboardView()
