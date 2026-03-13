@@ -55,13 +55,9 @@
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                         <span>Dashboard</span>
                     </button>
-                    <button class="nav-item" onclick="switchTab('optimization', event)">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                        <span>Run Optimization</span>
-                    </button>
                     <button class="nav-item" onclick="switchTab('parameters', event)">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        <span>Parameters</span>
+                        <span>Settings</span>
                     </button>
                     <button class="nav-item" onclick="switchTab('data', event)">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
@@ -312,8 +308,10 @@
             </div>
 
             <!-- Optimization Tab -->
-            <div id="optimization" class="tab-content">
-                <div class="control-panel">
+            <!-- Settings Tab (merged Run Optimization + Parameters) -->
+            <div id="parameters" class="tab-content">
+                <div class="parameter-grid">
+                    <!-- Run Configuration (moved from Run Optimization tab) -->
                     <div class="control-section">
                         <h3>Run Configuration</h3>
                         <div class="form-group">
@@ -334,7 +332,6 @@
                                 <option value="cnrfc">CNRFC</option>
                             </select>
                         </div>
-
                         <div class="form-group">
                             <label>Smoothing Priority</label>
                             <input type="range" class="priority-slider" id="prioritySmoothOperation"
@@ -342,7 +339,6 @@
                                    oninput="updatePriorityDisplay(this)">
                             <span class="priority-value">3</span>
                         </div>
-
                         <div class="form-group">
                             <label>Target Midpoint Elevation</label>
                             <input type="range" class="priority-slider" id="priorityMidpointElevation"
@@ -350,11 +346,7 @@
                                    oninput="updatePriorityDisplay(this)">
                             <span class="priority-value">4</span>
                         </div>
-                    </div>
-
-                    <div class="control-section">
-                        <div class="constraint-toggles">
-                            <h4>Constraint Options</h4>
+                        <div class="constraint-toggles" style="margin-top: 10px;">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="enableSmoothing" checked>
                                 Enable OXPH Smoothing Penalty
@@ -364,7 +356,6 @@
                                 Target Midpoint Elevation
                             </label>
                         </div>
-
                         <div class="form-group" id="smoothingWeightGroup">
                             <label>Smoothing Penalty Weight</label>
                             <input type="number" class="form-control" id="smoothingWeight"
@@ -372,108 +363,113 @@
                             <small>Higher values reduce OXPH changes</small>
                         </div>
                     </div>
-                </div>
 
-                <div style="text-align: center; margin-top: 20px;">
-                    <!-- Button moved to dashboard header -->
-                </div>
-            </div>
-
-            <!-- Parameters Tab -->
-            <div id="parameters" class="tab-content">
-                <div class="parameter-grid">
+                    <!-- Reservoir Constants -->
                     <div class="control-section">
                         <h3>Reservoir Constants</h3>
                         <div class="form-group">
-                            <label>ABAY Min Elevation (ft)</label>
+                            <label>ABAY Min Elevation (ft) <span class="info-icon" title="Minimum allowable Afterbay elevation. Optimizer penalizes schedules that drop below this level.">&#9432;</span></label>
                             <input type="number" class="form-control" value="1168.0" step="0.1">
                         </div>
                         <div class="form-group">
-                            <label>ABAY Max Elevation Buffer (ft)</label>
+                            <label>ABAY Max Elevation Buffer (ft) <span class="info-icon" title="Safety buffer below the physical maximum (1174.5 ft). Optimizer targets max minus this buffer.">&#9432;</span></label>
                             <input type="number" class="form-control" value="0.3" step="0.1">
                         </div>
                         <div class="form-group">
-                            <label>ABAY Elevation per AF</label>
+                            <label>ABAY Elevation per AF <span class="info-icon" title="Approximate feet of elevation change per acre-foot of storage. Used in water balance calculations.">&#9432;</span></label>
                             <input type="number" class="form-control" value="0.0132" step="0.0001">
                         </div>
                     </div>
 
+                    <!-- OXPH Generator -->
                     <div class="control-section">
                         <h3>OXPH Generator</h3>
                         <div class="form-group">
-                            <label>OXPH Min MW</label>
+                            <label>OXPH Min MW <span class="info-icon" title="Minimum generation when Oxbow unit is online. Below this, the unit must be offline (0 MW).">&#9432;</span></label>
                             <input type="number" class="form-control" value="0.8" step="0.1">
                         </div>
                         <div class="form-group">
-                            <label>OXPH Max MW</label>
+                            <label>OXPH Max MW <span class="info-icon" title="Maximum Oxbow generation capacity.">&#9432;</span></label>
                             <input type="number" class="form-control" value="5.8" step="0.1">
                         </div>
                         <div class="form-group">
-                            <label>OXPH Ramp Rate (MW/min)</label>
+                            <label>OXPH Ramp Rate (MW/min) <span class="info-icon" title="Maximum rate of generation change. Determines how long setpoint transitions take.">&#9432;</span></label>
                             <input type="number" class="form-control" value="0.042" step="0.001">
                         </div>
                     </div>
 
+                    <!-- Linear Programming Weights -->
                     <div class="control-section">
                         <h3>Linear Programming Weights</h3>
                         <div class="form-group">
-                            <label>Spillage Penalty Weight</label>
+                            <label>Spillage Penalty Weight <span class="info-icon" title="Higher values make the optimizer strongly avoid spilling water. Should be much larger than MW reward.">&#9432;</span></label>
                             <input type="number" class="form-control" value="10000.0" step="100">
                         </div>
                         <div class="form-group">
-                            <label>Summer MW Reward Weight</label>
+                            <label>Summer MW Reward Weight <span class="info-icon" title="Incentive for the optimizer to generate during high-value hours. Balances against elevation constraints.">&#9432;</span></label>
                             <input type="number" class="form-control" value="1000.0" step="10">
                         </div>
                         <div class="form-group">
-                            <label>Base Smoothing Penalty</label>
+                            <label>Base Smoothing Penalty <span class="info-icon" title="Penalizes frequent setpoint changes. Higher values produce smoother operator schedules with fewer transitions.">&#9432;</span></label>
                             <input type="number" class="form-control" value="100.0" step="1">
                         </div>
                     </div>
 
+                    <!-- Rafting Schedule -->
                     <div class="control-section">
-                <h3>Rafting Schedule</h3>
-                <div class="form-group">
-                    <label>Water Year Type</label>
-                    <select class="form-control" id="waterYearType">
-                        <option value="Wet">Wet</option>
-                        <option value="Above Normal">Above Normal</option>
-                        <option value="Below Normal">Below Normal</option>
-                        <option value="Dry">Dry</option>
-                        <option value="Critical">Critical</option>
-                        <option value="Extreme Critical">Extreme Critical</option>
-                    </select>
-                    <small class="form-text">Current water year classification (update annually)</small>
-                </div>
+                        <h3>Rafting Schedule</h3>
+                        <div class="form-group">
+                            <label>Water Year Type</label>
+                            <select class="form-control" id="waterYearType">
+                                <option value="Wet">Wet</option>
+                                <option value="Above Normal">Above Normal</option>
+                                <option value="Below Normal">Below Normal</option>
+                                <option value="Dry">Dry</option>
+                                <option value="Critical">Critical</option>
+                                <option value="Extreme Critical">Extreme Critical</option>
+                            </select>
+                            <small class="form-text">Current water year classification (update annually)</small>
+                        </div>
 
-                <div class="form-group">
-                    <label>Season Start</label>
-                    <input type="text" class="form-control" value="Saturday before Memorial Day" readonly>
-                </div>
-
-                <div class="form-group">
-                    <label>Season End</label>
-                    <input type="date" class="form-control" id="seasonEndDate" value="2025-09-30">
-                </div>
-
-                <div class="form-group">
-                    <label>OXPH Target MW</label>
-                    <input type="number" class="form-control" id="oxphTargetMW" value="5.8" step="0.1" min="0.8" max="5.8">
-                </div>
-                <div class="form-group">
-                    <label>Early Release Saturdays (YYYY-MM-DD)</label>
-                    <textarea class="form-control" id="earlyReleaseDates" rows="3" placeholder="2025-05-24&#10;2025-07-04&#10;2025-08-23">2025-05-24
-            2025-07-04
-            2025-08-23</textarea>
-                    <small class="form-text">One date per line, update annually</small>
-                </div>
-            </div>
+                        <div class="form-group">
+                            <label>Season Start</label>
+                            <select class="form-control" id="seasonStartMode" onchange="updateSeasonStart()">
+                                <option value="may1">May 1</option>
+                                <option value="memorial_day" selected>Saturday Before Memorial Day</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <div id="seasonStartDateGroup" class="hidden" style="margin-top: 6px;">
+                                <input type="date" class="form-control" id="seasonStartDate">
                             </div>
-
-                            <div style="text-align: center; margin-top: 25px;">
-                                <button class="btn" onclick="saveParameters()">Save Parameters</button>
-                                <button class="btn btn-secondary" onclick="resetParameters()">Reset to Defaults</button>
+                            <div id="seasonStartDisplay" style="margin-top: 4px;">
+                                <span class="computed-date" id="seasonStartComputed"></span>
                             </div>
                         </div>
+
+                        <div class="form-group">
+                            <label>Season End</label>
+                            <input type="date" class="form-control" id="seasonEndDate" value="2025-09-30">
+                        </div>
+
+                        <div class="form-group">
+                            <label>OXPH Target MW</label>
+                            <input type="number" class="form-control" id="oxphTargetMW" value="5.8" step="0.1" min="0.8" max="5.8">
+                        </div>
+                        <div class="form-group">
+                            <label>Early Release Saturdays (YYYY-MM-DD)</label>
+                            <textarea class="form-control" id="earlyReleaseDates" rows="3" placeholder="2025-05-24&#10;2025-07-04&#10;2025-08-23">2025-05-24
+2025-07-04
+2025-08-23</textarea>
+                            <small class="form-text">One date per line, update annually</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 25px;">
+                    <button class="btn" onclick="saveParameters()">Save Settings</button>
+                    <button class="btn btn-secondary" onclick="resetParameters()">Reset to Defaults</button>
+                </div>
+            </div>
 
             <!-- Data Table Tab -->
             <div id="data" class="tab-content">

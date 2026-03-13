@@ -200,7 +200,7 @@ class AlertingService:
 
         message = (f"ABAY ALERT: {param_display} {condition_desc} {unit}. "
                    f"Current: {triggered_value:.2f} {unit}. "
-                   f"Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')} PT")
+                   f"Time: {timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S')} PT")
 
         if alert.description:
             message += f" | {alert.description}"
@@ -221,7 +221,7 @@ class AlertingService:
                     Triggered Value: {alert_log.triggered_value:.2f}
                     Threshold: {alert.threshold_value}
                     Condition: {alert.condition}
-                    Time: {alert_log.created_at.strftime('%Y-%m-%d %H:%M:%S')} PT
+                    Time: {timezone.localtime(alert_log.created_at).strftime('%Y-%m-%d %H:%M:%S')} PT
                     
                     Message: {alert_log.message}
                     
@@ -579,7 +579,7 @@ class AlertingService:
                 f"FLOAT LEVEL CHANGE: Float level has {direction} from "
                 f"{alert.last_known_value:.1f} ft to {current_float:.1f} ft "
                 f"(change of {change:.1f} ft). "
-                f"Time: {timezone.now().strftime('%H:%M')} PT"
+                f"Time: {timezone.localtime(timezone.now()).strftime('%H:%M')} PT"
             )
 
             # Update last known value
@@ -614,7 +614,7 @@ class AlertingService:
                 f"OXPH DEVIATION: Current output is {current_oxph:.1f} MW, "
                 f"{direction} setpoint of {oxph_setpoint:.1f} MW "
                 f"(deviation of {deviation:.1f} MW exceeds limit of {max_deviation:.1f} MW). "
-                f"Time: {timezone.now().strftime('%H:%M')} PT"
+                f"Time: {timezone.localtime(timezone.now()).strftime('%H:%M')} PT"
             )
             return True, message
 
@@ -654,7 +654,7 @@ class AlertingService:
                     f"MF RT vs DA ALERT: Middle Fork generating {current_mf:.1f} MW, "
                     f"{direction} DA award of {da_mw:.1f} MW "
                     f"(deviation of {deviation:.1f} MW exceeds limit of {max_deviation:.1f} MW). "
-                    f"Time: {timezone.now().strftime('%H:%M')} PT"
+                    f"Time: {timezone.localtime(timezone.now()).strftime('%H:%M')} PT"
                 )
                 return True, message
 
@@ -705,7 +705,7 @@ class AlertingService:
                     f"ABAY FORECAST DEVIATION: Current elevation {current_elev:.1f} ft is "
                     f"{deviation:.1f} ft {direction} forecast of {forecast_elev:.1f} ft "
                     f"(exceeds limit of {max_deviation:.1f} ft). "
-                    f"Time: {timezone.now().strftime('%H:%M')} PT"
+                    f"Time: {timezone.localtime(timezone.now()).strftime('%H:%M')} PT"
                 )
                 return True, message
 

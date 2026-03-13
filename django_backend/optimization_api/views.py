@@ -1394,6 +1394,10 @@ def _prepare_chart_data(run, results_df=None):
         else:
             pi_df['timestamp_utc'] = pi_df['timestamp_utc'].dt.tz_convert('UTC')
         pi_df.set_index('timestamp_utc', inplace=True)
+        # Drop overlapping columns from results_df before join so PI actuals take precedence
+        overlap_cols = results_df.columns.intersection(pi_df.columns)
+        if len(overlap_cols) > 0:
+            results_df = results_df.drop(columns=overlap_cols)
         merged = results_df.join(pi_df, how='left')
     else:
         merged = results_df

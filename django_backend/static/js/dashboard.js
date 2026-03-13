@@ -37,9 +37,9 @@ function markForecastDirty(forceValue) {
 }
 
 const FORECAST_TABLE_HEADERS = [
-    'Date/Time', 'Setpoint', 'OXPH (MW)', 'ABAY Forecast (ft)', 'OXPH Actual', 'Setpoint Change',
+    'Date/Time', 'Setpoint', 'OXPH (MW)', 'ABAY Forecast (ft)', 'ABAY Actual (ft)', 'OXPH Actual', 'Setpoint Change',
     'MFRA Forecast', 'MFRA Actual',
-    'R4 Forecast', 'R4 Actual', 'R30 Forecast', 'R30 Actual', 
+    'R4 Forecast', 'R4 Actual', 'R30 Forecast', 'R30 Actual',
     'R20 Forecast', 'R5L Forecast', 'R26 Forecast'
 ];
 
@@ -51,9 +51,10 @@ const FORECAST_TABLE_COLUMNS = [
     width: 170,
     renderer: forecastDateTimeRenderer,
   },
-  { data: "setpoint", type: "numeric", numericFormat: { pattern: "0.0" }, width: 95 },
-  { data: "oxph", type: "numeric", numericFormat: { pattern: "0.0" }, width: 95 },
-  { data: "elevation", type: "numeric", numericFormat: { pattern: "0,0.0" }, readOnly: true, width: 135 },
+  { data: "setpoint", type: "numeric", numericFormat: { pattern: "0.0" }, width: 95, readOnly: false },
+  { data: "oxph", type: "numeric", numericFormat: { pattern: "0.0" }, readOnly: true, width: 95 },
+  { data: "elevation", type: "numeric", numericFormat: { pattern: "0,0.0" }, readOnly: true, width: 130 },
+  { data: "abayElevation", type: "numeric", numericFormat: { pattern: "0,0.0" }, readOnly: true, width: 120 },
   { data: "oxphActual", type: "numeric", numericFormat: { pattern: "0.0" }, readOnly: true, width: 95 },
   { 
     data: "setpointChange", 
@@ -62,15 +63,15 @@ const FORECAST_TABLE_COLUMNS = [
     width: 120,
     renderer: forecastTableSetpointChangeRenderer
   },
-  { data: "mfra", type: "numeric", numericFormat: { pattern: "0,0" }, width: 95 },
+  { data: "mfra", type: "numeric", numericFormat: { pattern: "0,0" }, width: 95, readOnly: false },
   { data: "mfraActual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 95 },
-  { data: "r4", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r4", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90, readOnly: false },
   { data: "r4Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
-  { data: "r30", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r30", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90, readOnly: false },
   { data: "r30Actual", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
-  { data: "r20", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
-  { data: "r5l", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
-  { data: "r26", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90 },
+  { data: "r20", type: "numeric", numericFormat: { pattern: "0,0" }, width: 90, readOnly: false },
+  { data: "r5l", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
+  { data: "r26", type: "numeric", numericFormat: { pattern: "0,0" }, readOnly: true, width: 90 },
 ];
 
 const PACIFIC_TIMEZONE = "America/Los_Angeles";
@@ -2219,7 +2220,7 @@ function initializePriceChart() {
         name: 'Day-Ahead Price',
         type: 'line',
         data: [],
-        smooth: true,
+        step: 'start',
         lineStyle: { width: 2 },
         symbol: 'none'
       },
@@ -2227,7 +2228,7 @@ function initializePriceChart() {
         name: 'Real-Time Price',
         type: 'line',
         data: [],
-        smooth: true,
+        step: 'start',
         lineStyle: { width: 2 },
         symbol: 'none'
       },
@@ -2235,7 +2236,7 @@ function initializePriceChart() {
         name: '15-Min Price',
         type: 'line',
         data: [],
-        smooth: true,
+        step: 'start',
         lineStyle: { width: 1, type: 'dashed' },
         symbol: 'none'
       }
@@ -2551,6 +2552,14 @@ function initializeForecastTable() {
     afterChange: handleForecastTableAfterChange,
     afterOnCellMouseDown: handleForecastTableCellMouseDown,
     afterSelection: handleForecastTableAfterSelection,
+    afterGetColHeader(col, TH) {
+      const colDef = FORECAST_TABLE_COLUMNS[col];
+      if (colDef && FORECAST_TABLE_EDITABLE_FIELDS.has(colDef.data)) {
+        TH.classList.add('editable-header');
+      } else {
+        TH.classList.remove('editable-header');
+      }
+    },
   });
 
   window.addEventListener("resize", handleForecastTableResize);
@@ -2587,18 +2596,43 @@ function forecastTableCellProperties(row, col) {
   }
 
   const classes = [];
+  const isActual = forecastTableActualCount > 0 && row < forecastTableActualCount;
 
-  if (forecastTableActualCount > 0) {
-    if (row < forecastTableActualCount) {
-      classes.push("actual-row-cell");
-    } else if (row === forecastTableActualCount) {
-      classes.push("forecast-divider-cell");
+  if (isActual) {
+    classes.push("actual-row-cell");
+  } else if (forecastTableActualCount > 0 && row === forecastTableActualCount) {
+    classes.push("forecast-divider-cell");
+  }
+
+  // Mark editable columns in forecast rows
+  const colDef = FORECAST_TABLE_COLUMNS[col];
+  if (colDef && FORECAST_TABLE_EDITABLE_FIELDS.has(colDef.data)) {
+    if (!isActual) {
+      classes.push("editable-cell");
+      props.readOnly = false;
+    } else {
+      // Historical rows: editable columns should still be read-only
+      props.readOnly = true;
     }
   }
 
   const rowData = displayForecastData[row];
   if (isDayBoundaryRow(rowData)) {
     classes.push("day-boundary-cell");
+  }
+
+  // Highlight ABAY actual vs forecast deviation (col 4 = abayElevation)
+  if (colDef && colDef.data === "abayElevation" && rowData) {
+    const actual = toFiniteNumber(rowData.abayElevation);
+    const forecast = toFiniteNumber(rowData.elevation);
+    if (actual !== null && forecast !== null && Math.abs(actual - forecast) > 0.5) {
+      classes.push("abay-deviation-cell");
+    }
+  }
+
+  // Alternating row stripes for readability (even forecast rows)
+  if (!isActual && row % 2 === 0) {
+    classes.push("stripe-row");
   }
 
   if (classes.length) {
@@ -4761,12 +4795,10 @@ function updateForecastTableWithData(forecastDataArray) {
     );
     const oxphActual = toFiniteNumber(row.oxph_actual);
 
-    const rawSetpointChange =
-      row.setpoint_change ??
-      row.setpoint_change_time ??
-      row.setpointChange ??
-      row.oxph_setpoint_change_time ??
-      null;
+    // Only use the backend's computed setpoint_change field (which has full ISO timestamps).
+    // Do NOT fall back to setpoint_change_time or oxph_setpoint_change_time — those may
+    // contain bare time strings like "16:00" which toValidDate() parses as today at that time.
+    const rawSetpointChange = row.setpoint_change ?? row.setpointChange ?? null;
     const setpointChangeDate = toValidDate(rawSetpointChange);
 
     return {
@@ -5155,6 +5187,70 @@ async function refreshChartsWithPrices() {
     await calculateRevenue();
   }
 }
+
+// --- Rafting Season Start Logic ---
+
+/**
+ * Get the Saturday before Memorial Day for a given year.
+ * Memorial Day = last Monday of May.
+ */
+function getSaturdayBeforeMemorialDay(year) {
+  // Find last Monday of May: start from May 31, walk back to Monday
+  const may31 = new Date(year, 4, 31); // Month is 0-indexed
+  const dayOfWeek = may31.getDay(); // 0=Sun, 1=Mon, ...
+  const daysBackToMonday = (dayOfWeek === 0) ? 6 : (dayOfWeek - 1);
+  const memorialDay = new Date(year, 4, 31 - daysBackToMonday);
+  // Saturday before = 2 days earlier
+  const satBefore = new Date(memorialDay);
+  satBefore.setDate(memorialDay.getDate() - 2);
+  return satBefore;
+}
+
+function formatDateForDisplay(date) {
+  const months = ['January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+function formatDateForInput(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function updateSeasonStart() {
+  const mode = document.getElementById('seasonStartMode')?.value;
+  const dateGroup = document.getElementById('seasonStartDateGroup');
+  const display = document.getElementById('seasonStartComputed');
+  const dateInput = document.getElementById('seasonStartDate');
+  const currentYear = new Date().getFullYear();
+
+  if (!display) return;
+
+  if (mode === 'may1') {
+    if (dateGroup) dateGroup.classList.add('hidden');
+    const may1 = new Date(currentYear, 4, 1);
+    display.textContent = formatDateForDisplay(may1);
+    display.parentElement.classList.remove('hidden');
+  } else if (mode === 'memorial_day') {
+    if (dateGroup) dateGroup.classList.add('hidden');
+    const satDate = getSaturdayBeforeMemorialDay(currentYear);
+    display.textContent = formatDateForDisplay(satDate);
+    display.parentElement.classList.remove('hidden');
+  } else if (mode === 'custom') {
+    if (dateGroup) dateGroup.classList.remove('hidden');
+    display.parentElement.classList.add('hidden');
+    if (dateInput && !dateInput.value) {
+      dateInput.value = formatDateForInput(new Date(currentYear, 4, 1));
+    }
+  }
+}
+
+// Initialize season start on page load
+document.addEventListener('DOMContentLoaded', function() {
+  updateSeasonStart();
+});
 
 // Save parameters
 function saveParameters() {

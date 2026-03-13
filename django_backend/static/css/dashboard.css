@@ -1549,8 +1549,10 @@ body {
     color: #2c3e50;
 }
 
+/* Editable cells — tan background with left accent border */
 .forecast-table .handsontable td.editable-cell {
     background: #fdf7ec;
+    border-left: 2px solid #e0c97f;
     transition: background-color 0.2s ease;
 }
 
@@ -1559,23 +1561,49 @@ body {
     background: #fbe7c6;
 }
 
+/* Editable column headers — distinct accent */
+.forecast-table .handsontable th.editable-header {
+    background: #f5edd6 !important;
+    border-bottom: 2px solid #d4a853 !important;
+    color: #5a4a1e;
+}
+
+/* Historical/actual rows — muted appearance */
 .forecast-table .handsontable td.actual-row-cell {
-    background: #f2f2f2;
-    color: #2c3e50;
+    background: #e8eaed;
+    color: #5f6368;
+    font-style: italic;
 }
 
 .forecast-table .handsontable td.actual-row-cell.editable-cell {
-    background: #ececec;
+    background: #e2e0d8;
+    border-left-color: #c4b68a;
 }
 
+/* Forecast/actual divider — prominent separator */
 .forecast-table .handsontable td.forecast-divider-cell {
-    border-top: 3px solid #000;
+    border-top: 3px solid #2c3e50;
+    box-shadow: 0 -2px 4px rgba(0,0,0,0.08);
 }
 
+/* Day boundary lines */
 .forecast-table .handsontable td.day-boundary-cell {
-    border-bottom: 3px solid #000;
+    border-bottom: 2px solid #495057;
 }
 
+/* ABAY deviation highlight — amber warning */
+.forecast-table .handsontable td.abay-deviation-cell {
+    background: #fff3cd !important;
+    color: #856404;
+    font-weight: 600;
+}
+
+/* Alternating row stripes for forecast rows */
+.forecast-table .handsontable td.stripe-row:not(.editable-cell) {
+    background: #fafbfc;
+}
+
+/* Frozen header row background */
 .forecast-table .handsontable .ht_clone_top td,
 .forecast-table .handsontable .ht_clone_top th {
     background: #f8f9fa;
@@ -1586,6 +1614,41 @@ body {
     gap: 10px;
     margin-bottom: 10px;
     flex-wrap: wrap;
+}
+
+/* Info icons for parameter labels */
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    color: #666;
+    font-size: 11px;
+    font-style: normal;
+    cursor: help;
+    margin-left: 6px;
+    vertical-align: middle;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+.info-icon:hover {
+    background: #00d4ff;
+    color: #0a0e1a;
+}
+
+/* Computed date display for rafting season start */
+.computed-date {
+    display: inline-block;
+    padding: 4px 10px;
+    background: #eef7ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 4px;
+    color: #1a5276;
+    font-weight: 500;
+    margin-top: 4px;
+    font-size: 0.9rem;
 }
 
 /* Setpoint Modal Styles */
