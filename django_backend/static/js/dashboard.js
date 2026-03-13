@@ -558,11 +558,42 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Mobile Menu
   const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const mobileBackdrop = document.getElementById('mobileBackdrop');
+  const sidebar = document.querySelector('.sidebar');
+
+  function openMobileMenu() {
+      if (sidebar) sidebar.classList.add('mobile-open');
+      if (mobileBackdrop) mobileBackdrop.classList.add('visible');
+  }
+
+  function closeMobileMenu() {
+      if (sidebar) sidebar.classList.remove('mobile-open');
+      if (mobileBackdrop) mobileBackdrop.classList.remove('visible');
+  }
+
   if (mobileMenuBtn) {
       mobileMenuBtn.addEventListener('click', () => {
-          document.querySelector('.sidebar').classList.toggle('mobile-open');
+          if (sidebar && sidebar.classList.contains('mobile-open')) {
+              closeMobileMenu();
+          } else {
+              openMobileMenu();
+          }
       });
   }
+
+  // Close menu when backdrop is tapped
+  if (mobileBackdrop) {
+      mobileBackdrop.addEventListener('click', closeMobileMenu);
+  }
+
+  // Close menu when a nav item is tapped on mobile
+  document.querySelectorAll('.sidebar .nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+          if (window.innerWidth <= 768) {
+              closeMobileMenu();
+          }
+      });
+  });
 
   if (typeof refreshRaftingTimes === "function") {
     setTimeout(() => refreshRaftingTimes(), 500);
