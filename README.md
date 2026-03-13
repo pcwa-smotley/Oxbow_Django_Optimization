@@ -1,6 +1,6 @@
 # ABAY Reservoir Optimization System
 
-A Django-based water reservoir optimization system that uses hybrid linear programming and model predictive control to optimize the Oxbow Powerhouse (OXPH) generation schedule while maintaining reservoir levels and meeting recreational rafting requirements.
+A Django-based water reservoir optimization system that uses MILP linear programming to optimize the Oxbow Powerhouse (OXPH) generation schedule while maintaining reservoir levels and meeting recreational rafting requirements.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -13,7 +13,6 @@ A Django-based water reservoir optimization system that uses hybrid linear progr
 - [Optimization Approaches](#optimization-approaches)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [Documentation](#documentation)
 
 ## Overview
 
@@ -27,20 +26,21 @@ The ABAY Reservoir Optimization System manages water flow through the Afterbay (
 ## Features
 
 ### Core Capabilities
-- **Hybrid Optimization**: Combines MILP (Mixed-Integer Linear Programming) for precision with MPC (Model Predictive Control) fallback for robustness
+- **MILP Optimization**: Mixed-Integer Linear Programming via PuLP/CBC with automatic fallback for robustness
 - **Real-time Data Integration**: Connects to PI System for live reservoir data
-- **Forecast Integration**: Uses river flow forecasts from Upstream API
-- **Historical Bias Correction**: Learns from past prediction errors to improve accuracy
+- **Forecast Integration**: Uses river flow forecasts from Upstream API (HydroForecast/CNRFC)
+- **Historical Bias Correction**: 24-hour rolling bias applied additively to forecast net inflow
 - **CAISO DA Awards Integration**: Fetch Day Ahead market awards for Middle Fork (MFP1) from CAISO B2B API to replace persistence-based MFRA forecasts with scheduled generation data
-- **Multi-channel Alerts**: Email, SMS, and browser notifications for critical events
+- **Multi-channel Alerts**: Email, SMS (Twilio), voice, and browser notifications for critical events (SMS/voice pending Twilio API approval)
 - **Web Dashboard**: Mission-control-grade real-time monitoring and control interface
 
 ### Dashboard UI
 - **Neon Control Room Theme**: Dark mode with cyan/magenta/lime/amber accents, glassmorphism cards, animated mesh gradient background
-- **Apache ECharts**: Interactive charts with synced crosshairs, DataZoom sliders, day dividers, and smooth animations (migrated from Chart.js)
+- **Apache ECharts 5**: Interactive charts with synced crosshairs, DataZoom sliders, day dividers, and smooth animations
 - **KPI Gauge Strip**: Five animated gauges (ABAY Elevation, OXPH Output, Spill Risk, Revenue Rate, Forecast Confidence)
 - **Live System Schematic**: Animated SVG water flow diagram with particle animations showing real-time flow through MFRA, R30, R4, ABAY, OXPH, and Spillway
 - **7-Day Operations Timeline**: Bar chart overview of OXPH setpoints with rafting window highlights and day boundaries
+- **Editable Data Table**: Handsontable grid with physics-parity recalculation — edit setpoints and see ABAY forecast impact immediately via ramp + head-limit physics
 - **Command Palette**: Ctrl+K quick-action palette with fuzzy search, keyboard shortcuts (1-8 for tabs, D for dark mode, ? for help)
 - **Smart Alert Toasts**: Slide-in notifications with severity icons, audio chimes for critical alerts, stacking with overflow badge
 - **MFRA Source Indicator**: Badge showing whether MFRA forecast uses "DA Awards" (green) or "Persistence" (amber), plus a "Fetch DA Awards" button on the power chart
@@ -54,6 +54,14 @@ The ABAY Reservoir Optimization System manages water flow through the Afterbay (
 - Ramp rate limitations (0.042 MW/min)
 - Summer rafting schedule compliance
 - Automatic fallback to simpler optimization when primary fails
+
+### Alerting System
+- **Multi-channel delivery**: Email, SMS, voice call, browser notification
+- **Category-based thresholds**: Flow, Afterbay, Rafting, Generation
+- **Cooldown logic**: Prevents alert fatigue with configurable cooldown windows
+- **Per-user preferences**: Each operator configures their own channels and phone number
+- **Voice escalation**: Critical unacknowledged alerts trigger voice calls
+- **Status**: Backend fully implemented. SMS/voice delivery pending Twilio API approval. Email and browser alerts are operational now.
 
 ## System Requirements
 
@@ -70,6 +78,7 @@ The ABAY Reservoir Optimization System manages water flow through the Afterbay (
 ### Python Dependencies
 ```
 django>=4.2
+djangorestframework
 pandas>=1.5.0
 numpy>=1.23.0
 pulp>=2.7.0
@@ -80,7 +89,7 @@ websockets
 channels
 redis (optional)
 celery (optional)
-twilio (optional, for SMS alerts)
+twilio (optional, for SMS/voice alerts — pending API approval)
 caisopy-b2b (optional, for CAISO DA awards)
 lxml (optional, for CAISO XML parsing)
 ```
@@ -102,12 +111,12 @@ cd Oxbow_Django_Optimization
 ### 2. Create Virtual Environment
 ```bash
 # Windows
-python -m venv venv
-venv\Scripts\activate
+python -m venv venv312
+venv312\Scripts\activate
 
-# Linux/Mac
-python3 -m venv venv
-source venv/bin/activate
+# Linux/Mac (or Git Bash on Windows)
+python3 -m venv venv312
+source venv312/Scripts/activate
 ```
 
 ### 3. Install Dependencies
@@ -118,33 +127,17 @@ pip install -r requirements.txt
 ### 4. Configure API Credentials
 Create the configuration directory and add your API credentials:
 ```bash
-# Create config directory
-mkdir abay_optimization/config
+mkdir abay_opt/config
 
-# Create API credentials file
-# Edit this file with your actual API keys
-cat > abay_optimization/config/api_credentials.json << EOF
-{
-    "pi_system": {
-        "url": "https://your-pi-system.com/piwebapi",
-        "username": "your_username",
-        "password": "your_password"
-    },
-    "upstream_api": {
-        "api_key": "your_upstream_api_key",
-        "base_url": "https://api.upstream.tech"
-    },
-    "yes_energy": {
-        "api_key": "your_yes_energy_key"
-    },
-    "twilio": {
-        "account_sid": "your_twilio_sid",
-        "auth_token": "your_twilio_token",
-        "from_number": "+1234567890"
-    }
-}
-EOF
+# Create API credentials file and edit with your actual keys
+# abay_opt/config/api_credentials.json
 ```
+
+Required credential sections:
+- `pi_system` — PI Web API URL, username, password
+- `upstream_api` — Upstream API key and base URL
+- `yes_energy` — YES Energy API key (optional)
+- `twilio` — Account SID, auth token, from number (pending API approval)
 
 ### 5. Initialize Database
 ```bash
@@ -171,21 +164,21 @@ DEBUG = True  # Set to False for production
 # Optimization settings
 ABAY_OPTIMIZATION = {
     'USE_SIMULATED_DATA': True,  # False to use real PI data
-    'USE_HYBRID_OPTIMIZER': True,  # Use hybrid MILP+MPC approach
+    'USE_HYBRID_OPTIMIZER': True,
     'FORECAST_HORIZON_DAYS': 7,
     'SIMULATION_INTERVAL_MINUTES': 60,
 }
 ```
 
 ### Operational Constants
-Edit `abay_optimization/constants.py` for system parameters:
+Edit `abay_opt/constants.py` for system parameters:
 
 ```python
 # Physical constraints
-ABAY_MIN_ELEV_FT = 1167.0  # Minimum elevation
-OXPH_MIN_MW = 0.7          # Minimum generation
-OXPH_MAX_MW = 5.8          # Maximum generation
-OXPH_RAMP_RATE_MW_PER_MIN = 0.042  # Ramp rate
+ABAY_MIN_ELEV_FT = 1167.0
+OXPH_MIN_MW = 0.7
+OXPH_MAX_MW = 5.8
+OXPH_RAMP_RATE_MW_PER_MIN = 0.042
 
 # Optimization priorities (1=highest, 5=lowest)
 PRIORITY_AVOID_SUMMER_SPILL = 1
@@ -199,11 +192,10 @@ PRIORITY_MIDPOINT_ELEVATION = 4
 
 ### Quick Start (Development)
 ```bash
-# Start Django development server
+source venv312/Scripts/activate
 cd django_backend
 python manage.py runserver
 
-# Access the dashboard
 # Open browser to: http://localhost:8000
 ```
 
@@ -233,17 +225,15 @@ redis-server
 ```
 
 ### Running Optimization Standalone
-
-#### Test Optimization
 ```bash
-# Test the hybrid optimizer
-python test_hybrid_optimizer.py
+# Run optimizer from CLI (writes CSV)
+python -m abay_opt.cli --horizon 72 --outfile ./abay_schedule.csv
 
-# Debug LP problems
-python debug_lp_problem.py
+# Historical scenario (uses actuals when historical_start is set)
+python -m abay_opt.cli --historical-start "2025-06-28T00:00" --outfile ./abay_schedule_hist.csv
 
-# Run optimization without Django
-python run_real_optimization.py
+# Test entry (Python runner)
+python -m abay_opt.test_entry
 ```
 
 ## Current Project Structure
@@ -251,20 +241,20 @@ python run_real_optimization.py
 ```
 Oxbow_Django_Optimization/
 ├── abay_opt/                          # Core engine (single source of truth)
-│   ├── bias.py
-│   ├── build_inputs.py                # assembles lookback+forecast (supports historical)
+│   ├── bias.py                        # 24h rolling bias computation
+│   ├── build_inputs.py                # Assembles lookback+forecast (supports historical)
 │   ├── caiso_da.py                    # CAISO DA awards service (fetch, aggregate, query)
 │   ├── cli.py                         # CLI (CSV writer + annotations)
 │   ├── config/                        # API credentials (not in Git)
-│   ├── constants.py
-│   ├── data_fetcher.py
-│   ├── optimizer.py
-│   ├── physics.py
-│   ├── recalc.py                      # forward recalc for operator edits (no MILP)
-│   ├── schedule.py                    # rafting window logic
-│   ├── test_entry.py                  # convenience runner for QA/historical testing
+│   ├── constants.py                   # Physical constants and thresholds
+│   ├── data_fetcher.py                # PI System and Upstream API data retrieval
+│   ├── optimizer.py                   # MILP solver (PuLP/CBC)
+│   ├── physics.py                     # Water balance, stage-storage, head loss
+│   ├── recalc.py                      # Forward recalc for operator edits (no MILP)
+│   ├── schedule.py                    # Rafting window logic
+│   ├── test_entry.py                  # Convenience runner for QA/historical testing
 │   ├── utils.py
-│   └── yes_energy_grab.py             # optional energy prices
+│   └── yes_energy_grab.py             # Optional energy prices
 │
 ├── caiso_config/                      # CAISO B2B API configuration
 │   ├── caiso_cert.pem                 # CAISO client certificate (not in Git)
@@ -272,44 +262,44 @@ Oxbow_Django_Optimization/
 │       ├── caiso_api.py               # CAISO CMRI API client (SOAP/WS-Security)
 │       └── CAISO_Data_grabber.py      # Envelope builder + signer
 │
-├ django_backend/
-│   ├── manage.py              # Django management script
-│   ├── db.sqlite3            # SQLite database
+├── django_backend/
+│   ├── manage.py
+│   ├── db.sqlite3                     # SQLite database (WAL mode)
 │   │
-│   ├── django_backend/       # Django settings
-│   │   ├── settings.py      # Main configuration
-│   │   ├── urls.py         # Root URL config
-│   │   └── celery.py       # Background task config
+│   ├── django_backend/                # Django settings
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   └── celery.py
 │   │
-│   ├── optimization_api/     # Main Django app
-│   │   ├── views.py         # API endpoints
-│   │   ├── models.py        # Data models
-│   │   ├── alerting.py      # Alert engine
-│   │   ├── tasks.py         # Background tasks
-│   │   ├── consumers.py     # WebSocket handlers
+│   ├── optimization_api/              # Main Django app
+│   │   ├── views.py                   # API endpoints
+│   │   ├── models.py                  # Data models (runs, alerts, profiles)
+│   │   ├── alerting.py                # Alert engine (email, SMS, voice, browser)
+│   │   ├── tasks.py                   # Background tasks
+│   │   ├── consumers.py               # WebSocket handlers
 │   │   └── management/commands/
-│   │       ├── monitor_alerts.py   # Alert monitoring
-│   │       └── monitor_sqlite.py   # DB lock monitoring
+│   │       ├── monitor_alerts.py      # Alert monitoring command
+│   │       └── monitor_sqlite.py      # DB lock monitoring
 │   │
 │   ├── templates/
-│   │   ├── dashboard.html   # Main UI
-│   │   └── profile.html     # User settings
+│   │   ├── dashboard.html             # Main UI
+│   │   └── profile.html               # User settings
 │   │
 │   ├── static/js/
-│   │   ├── dashboard.js        # Frontend logic (ECharts charts, gauges, timeline)
-│   │   ├── echart-theme.js     # Custom ECharts themes (oxbow-light, oxbow-dark)
-│   │   ├── command-palette.js  # Ctrl+K palette, boot sequence, keyboard shortcuts
-│   │   ├── system-schematic.js # Animated SVG water flow diagram
-│   │   ├── auth-alerts.js      # Auth, WebSocket & smart alert toasts
+│   │   ├── dashboard.js               # Frontend logic (ECharts charts, gauges, timeline)
+│   │   ├── echart-theme.js            # Custom ECharts themes (oxbow-light, oxbow-dark)
+│   │   ├── command-palette.js         # Ctrl+K palette, boot sequence, keyboard shortcuts
+│   │   ├── system-schematic.js        # Animated SVG water flow diagram
+│   │   ├── auth-alerts.js             # Auth, WebSocket & smart alert toasts
 │   │   └── session-manager.js
 │   │
 │   ├── static/css/
-│   │   └── dashboard.css       # Neon dark theme, glassmorphism, all component styles
+│   │   └── dashboard.css              # Neon dark theme, glassmorphism, all component styles
 │   │
-│   └── optimization_outputs/  # CSV results storage
+│   └── optimization_outputs/          # CSV results storage
 │
-├── output/                    # LP problem files
-└── debug_lp_problem.py       # Standalone LP debugger
+├── output/                            # LP problem files
+└── debug_lp_problem.py                # Standalone LP debugger
 ```
 
 ## Usage
@@ -319,17 +309,18 @@ Oxbow_Django_Optimization/
 1. **Login**: Navigate to http://localhost:8000 and login with your credentials
 
 2. **Main Dashboard** shows:
-   - Current reservoir elevation
+   - Current reservoir elevation with KPI gauges
    - OXPH generation status
-   - 7-day optimization forecast
-   - Real-time alerts
-   - System status indicators
+   - 7-day optimization forecast with interactive ECharts
+   - Animated system schematic with real-time flow
+   - Real-time alerts and system status indicators
 
 3. **Controls**:
-   - **Run Optimization**: Click to generate new schedule
+   - **Run Optimization**: Generate a new schedule
    - **Optimization Settings**: Adjust priorities and parameters
-   - **Alert Settings**: Configure notification thresholds
+   - **Alert Settings**: Configure notification thresholds and channels
    - **Export Results**: Download optimization results as CSV
+   - **Command Palette (Ctrl+K)**: Quick navigation and actions
 
 ### CAISO Day Ahead Awards (MFRA Forecast)
 
@@ -344,7 +335,7 @@ By default the optimizer assumes Middle Fork will produce the same MW tomorrow a
 - When you click **Run Optimization**, `build_inputs()` first checks for stored DA awards covering the forecast window
 - If DA awards cover at least 50% of the forecast hours, they are used as the MFRA forecast
 - If no DA awards are available (or coverage is too low), the optimizer silently falls back to persistence
-- The **MFRA source badge** in the run metadata area shows which method was used:
+- The **MFRA source badge** shows which method was used:
   - Green **"MFRA: DA Awards"** — scheduled generation from CAISO
   - Amber **"MFRA: Persistence"** — yesterday's generation pattern
 
@@ -359,123 +350,95 @@ By default the optimizer assumes Middle Fork will produce the same MW tomorrow a
 
 ### API Endpoints
 
-#### Get Current Status
+#### Core Operations
 ```bash
+# Get system status
 curl http://localhost:8000/api/system-status/
-```
 
-#### Run Optimization
-```bash
+# Run optimization
 curl -X POST http://localhost:8000/api/run-optimization/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "use_hybrid": true,
-    "priorities": {
-      "avoid_spill": 1,
-      "summer_rafting": 2,
-      "smooth_operation": 3
-    }
-  }'
-```
+  -d '{"use_hybrid": true}'
 
-#### Get Optimization Results
-```bash
+# Get latest optimization results
 curl http://localhost:8000/api/optimization-results/latest/
+
+# Simulate operator edits (recalc from edited hour forward)
+curl -X POST http://localhost:8000/api/simulate/ \
+  -H "Content-Type: application/json" \
+  -d '{"overrides": [...]}'
 ```
 
-#### Fetch CAISO DA Awards
+#### CAISO DA Awards
 ```bash
-# Fetch awards for the next delivery day (auto-detected)
-curl -X POST http://localhost:8000/api/caiso-da-awards/ \
-  -H "Content-Type: application/json" \
-  -d '{}'
+# Fetch awards for the next delivery day
+curl -X POST http://localhost:8000/api/caiso-da-awards/
 
 # Fetch awards for a specific date
 curl -X POST http://localhost:8000/api/caiso-da-awards/ \
   -H "Content-Type: application/json" \
   -d '{"trade_date": "2026-02-08"}'
+
+# Get stored awards
+curl http://localhost:8000/api/caiso-da-awards/?trade_date=2026-02-08
 ```
 
-#### Get Stored DA Awards
+#### Run Management
 ```bash
-# Get awards for a specific date
-curl http://localhost:8000/api/caiso-da-awards/?trade_date=2026-02-08
+# Save current schedule
+curl -X POST http://localhost:8000/api/runs/
 
-# Get awards for the default next delivery day
-curl http://localhost:8000/api/caiso-da-awards/
+# List recent runs
+curl http://localhost:8000/api/runs/recent?n=10
+
+# Load a run
+curl http://localhost:8000/api/runs/{id}
+
+# Compare two runs
+curl http://localhost:8000/api/runs/{id}/compare/{id2}
 ```
 
 ### Command-Line Management
 
-#### Database Management
 ```bash
-# Check database status
+# Database management
 python manage.py dbshell
-
-# Backup database
 python manage.py dumpdata > backup.json
-
-# Restore database
 python manage.py loaddata backup.json
-```
 
-#### User Management
-```bash
-# Create new user
+# User management
 python manage.py createsuperuser
-
-# Change password
 python manage.py changepassword username
-```
 
-#### System Monitoring
-```bash
-# Check system status
+# System monitoring
 python manage.py check
-
-# Monitor SQLite locks
 python manage.py monitor_sqlite
-
-# Test alert system
 python manage.py monitor_alerts --once --test-mode
 ```
 
 ## Optimization Approaches
 
-### Hybrid Optimizer (Default)
-The system uses a hybrid approach combining two optimization methods:
-
-1. **Primary: MILP (Mixed-Integer Linear Programming)**
-   - Precise constraint handling
-   - Guarantees feasibility when solution exists
-   - Uses PuLP with CBC solver
-
-2. **Fallback: MPC (Model Predictive Control)**
-   - Activated when MILP is infeasible
-   - Uses penalty-based soft constraints
-   - More robust to difficult conditions
+### MILP Optimizer (Primary)
+The system uses Mixed-Integer Linear Programming via PuLP with the CBC solver:
+- Precise constraint handling with guaranteed feasibility when solution exists
+- Solve time <2 seconds for 168-hour horizons
+- Piecewise-linear stage-storage mapping for ABAY ft<->AF
+- Ramp rate, head loss, and rafting window constraints
+- Weighted penalty objective for elevation bounds, spill avoidance, and smooth operation
 
 ### Historical Bias Correction
 The system automatically:
 - Analyzes past 24 hours of predictions vs actual
-- Calculates average prediction error
-- Applies bias correction to future forecasts
+- Calculates average prediction error (clipped ±2000 CFS)
+- Applies bias correction to future forecasts additively
 
-### Switching Between Optimizers
-```python
-# In optimization request
-{
-    "use_hybrid": true,  # true for hybrid, false for MILP-only
-    "optimization_params": {
-        "priorities": {
-            "avoid_summer_spill": 1,
-            "avoid_spill": 2,
-            "summer_rafting": 2,
-            "smooth_operation": 3,
-            "midpoint_elevation": 4
-        }
-    }
-}
+### Physics Pipeline
+```
+build_inputs() → build_and_solve() → recalc_abay_path()
+     ↑                   ↑                    ↑
+  DA awards +      MILP solver         Forward recalc
+  persistence      (optimizer.py)      for operator edits
+  + bias                               (no re-solve)
 ```
 
 ## Troubleshooting
@@ -484,57 +447,23 @@ The system automatically:
 
 #### 1. Database Migration Error: "unexpected keyword argument 'init_command'"
 **Cause**: Incompatibility with newer Python sqlite3 versions
-**Solution**: 
-- The fix has been applied - SQLite optimizations moved to apps.py
-- If you encounter this, ensure you're using the latest code
-- Run `python manage.py check` to verify configuration
+**Solution**: SQLite optimizations moved to apps.py. Run `python manage.py check` to verify.
 
 #### 2. Optimization Fails with "Infeasible"
 **Cause**: Constraints cannot be satisfied
-**Solution**: 
-- Check reservoir level vs minimum requirements
-- Verify inflow forecasts are reasonable
-- System will automatically try MPC fallback
+**Solution**: Check reservoir level vs minimum requirements. Verify inflow forecasts are reasonable.
 
 #### 3. PI System Connection Error
 **Cause**: VPN not connected or credentials invalid
-**Solution**:
-- Verify VPN connection
-- Check credentials in config/api_credentials.json
-- System will use simulated data as fallback
+**Solution**: Verify VPN connection. Check credentials in `abay_opt/config/api_credentials.json`. System will use simulated data as fallback.
 
 #### 4. WebSocket Disconnections
 **Cause**: Network issues or server restart
-**Solution**: WebSockets auto-reconnect every 5 seconds
+**Solution**: WebSockets auto-reconnect every 5 seconds.
 
 #### 5. Database Locked Error
 **Cause**: SQLite concurrent access
-**Solution**: 
-- WAL mode is enabled by default
-- Check logs/sqlite_locks.log
-- Restart Django if persistent
-
-### Debug Mode
-Enable detailed logging:
-```python
-# In settings.py
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'level': 'DEBUG',
-        },
-    },
-    'loggers': {
-        'abay_optimization': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-        },
-    },
-}
-```
+**Solution**: WAL mode is enabled by default. Check `logs/sqlite_locks.log`. Restart Django if persistent.
 
 ### Log Files
 - Django logs: `django_backend/django.log`
@@ -546,43 +475,33 @@ LOGGING = {
 
 ### Running Tests
 ```bash
+cd django_backend
+
 # Run all tests
 python manage.py test
 
-# Run specific test
-python manage.py test optimization_api.tests.TestOptimization
+# Alert tests only
+python -m unittest optimization_api.tests.test_alerts
 
-# Test hybrid optimizer
-python test_hybrid_optimizer.py
+# Model tests only
+python -m unittest optimization_api.tests.test_models
 
-# Test with coverage
-coverage run --source='.' manage.py test
-coverage report
+# View tests only
+python -m unittest optimization_api.tests.test_views
+
+# Recalc tests
+python -m unittest abay_opt.tests.test_recalc
+
+# Physics tests
+python -m unittest abay_opt.tests.test_physics
 ```
 
-### Code Style
-Follow PEP 8 guidelines:
-```bash
-# Check code style
-flake8 abay_optimization/
-
-# Auto-format code
-black abay_optimization/
-```
-
-## Documentation
-
-
-### API Documentation
-```bash
-# Generate API docs
-python manage.py generateschema > openapi-schema.yml
-```
-
-### Further Help
-- GitHub Issues: Report bugs and request features
-- Email: support@your-org.com
-- Documentation: See `/docs` directory
+### Design Decisions
+- SQLite chosen intentionally for small user base (~8 operators)
+- All times in Pacific timezone
+- Focus on reliability over scalability
+- Vanilla JS frontend (no React/Vue/Angular)
+- Apache ECharts 5 for all charting (migrated from Chart.js)
 
 ## License
 
@@ -591,9 +510,8 @@ python manage.py generateschema > openapi-schema.yml
 ## Contributors
 
 - PCWA Engineering Team
-- [Your Name]
 
 ---
 
 **Last Updated**: February 2026
-**Version**: 0.2
+**Version**: 0.3

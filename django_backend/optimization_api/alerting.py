@@ -161,8 +161,11 @@ class AlertingService:
             'afterbay_elevation': 'Afterbay Elevation',
             'oxph_power': 'OXPH Power',
             'r4_flow': 'R4 Flow',
+            'r11_flow': 'R11 Flow',
             'r30_flow': 'R30 Flow',
             'mfra_power': 'MFRA Power',
+            'mf_rt_vs_da': 'MF RT vs DA Deviation',
+            'abay_forecast_deviation': 'ABAY Forecast Deviation',
             'float_level': 'Float Level',
             'net_flow': 'Net Flow',
             'spillage': 'Spillage'
@@ -172,8 +175,11 @@ class AlertingService:
             'afterbay_elevation': 'ft',
             'oxph_power': 'MW',
             'r4_flow': 'CFS',
+            'r11_flow': 'CFS',
             'r30_flow': 'CFS',
             'mfra_power': 'MW',
+            'mf_rt_vs_da': 'MW',
+            'abay_forecast_deviation': 'ft',
             'float_level': 'ft',
             'net_flow': 'CFS',
             'spillage': 'AF'
@@ -369,7 +375,7 @@ class AlertingService:
         standard_alerts = active_alerts.filter(special_type='standard')
         special_alerts = active_alerts.exclude(special_type='standard')
 
-        # Check standard alerts
+        # Check standard alerts (with re-arm logic)
         for alert in standard_alerts:
             try:
                 parameter_value = system_data.get(alert.parameter)
@@ -378,17 +384,30 @@ class AlertingService:
                     logger.debug(f"Parameter '{alert.parameter}' not found in system data for alert '{alert.name}'")
                     continue
 
+                # Re-arm if value has returned to safe zone
+                alert.rearm_if_safe(parameter_value)
+
                 if alert.check_condition(parameter_value) and not alert.is_in_cooldown():
                     triggered_alert = self._trigger_alert(alert, parameter_value, system_data)
                     if triggered_alert:
+                        # Disarm so it won't fire again until value returns to safe zone
+                        alert.disarm()
                         triggered_alerts.append(triggered_alert)
 
             except Exception as e:
                 logger.error(f"Error checking alert '{alert.name}': {str(e)}")
 
-        # Check special alerts
+        # Check special alerts (with re-arm for applicable types)
         for alert in special_alerts:
             try:
+                # Re-arm special alerts if value returned to safe zone
+                parameter_value = system_data.get(alert.parameter)
+                if parameter_value is not None:
+                    alert.rearm_if_safe(parameter_value)
+
+                if not alert.is_armed:
+                    continue
+
                 triggered, message = self._check_special_alert(alert, system_data)
                 if triggered and not alert.is_in_cooldown():
                     # Get the relevant value for logging
@@ -403,8 +422,9 @@ class AlertingService:
                         severity=alert.severity
                     )
 
-                    # Update last triggered
+                    # Update last triggered and disarm
                     alert.last_triggered = timezone.now()
+                    alert.is_armed = False
                     alert.save()
 
                     # Send notifications
@@ -446,6 +466,10 @@ class AlertingService:
             return self._check_float_change_alert(alert, system_data)
         elif alert.special_type == 'deviation':
             return self._check_deviation_alert(alert, system_data)
+        elif alert.special_type == 'mf_rt_vs_da':
+            return self._check_mf_rt_vs_da_alert(alert, system_data)
+        elif alert.special_type == 'abay_forecast_dev':
+            return self._check_abay_forecast_deviation_alert(alert, system_data)
         else:
             return False, None
 
@@ -596,6 +620,100 @@ class AlertingService:
 
         return False, None
 
+    def _check_mf_rt_vs_da_alert(self, alert: AlertThreshold, system_data: Dict) -> tuple[bool, Optional[str]]:
+        """Check if Middle Fork real-time generation deviates from DA awards.
+
+        Compares current MF power (from PI) against the DA award for this hour
+        (from CAISODAAwardSummary). Triggers if deviation exceeds threshold_value MW.
+        """
+        current_mf = system_data.get('mfra_power')
+        if current_mf is None:
+            return False, None
+
+        # Look up the DA award for the current hour
+        try:
+            from .models import CAISODAAwardSummary
+            now = timezone.now()
+            # Find the DA award summary for this hour
+            summary = CAISODAAwardSummary.objects.filter(
+                interval_start_utc__lte=now,
+                interval_start_utc__gt=now - timedelta(hours=1)
+            ).order_by('-interval_start_utc').first()
+
+            if not summary:
+                logger.debug("No DA award summary found for current hour")
+                return False, None
+
+            da_mw = summary.total_mw
+            deviation = abs(current_mf - da_mw)
+            max_deviation = alert.threshold_value
+
+            if deviation > max_deviation:
+                direction = "above" if current_mf > da_mw else "below"
+                message = (
+                    f"MF RT vs DA ALERT: Middle Fork generating {current_mf:.1f} MW, "
+                    f"{direction} DA award of {da_mw:.1f} MW "
+                    f"(deviation of {deviation:.1f} MW exceeds limit of {max_deviation:.1f} MW). "
+                    f"Time: {timezone.now().strftime('%H:%M')} PT"
+                )
+                return True, message
+
+        except Exception as e:
+            logger.error(f"Error checking MF RT vs DA: {e}")
+
+        return False, None
+
+    def _check_abay_forecast_deviation_alert(self, alert: AlertThreshold, system_data: Dict) -> tuple[bool, Optional[str]]:
+        """Check if actual ABAY elevation deviates from the most recent optimization forecast.
+
+        Compares current ABAY elevation (from PI) against the forecasted elevation
+        from the most recent optimization run. Triggers if deviation exceeds threshold_value ft.
+        """
+        current_elev = system_data.get('afterbay_elevation')
+        if current_elev is None:
+            return False, None
+
+        try:
+            from .models import OptimizationRun, OptimizationResult
+            now = timezone.now()
+
+            # Get the most recent completed optimization run
+            latest_run = OptimizationRun.objects.filter(
+                status='completed'
+            ).order_by('-completed_at').first()
+
+            if not latest_run:
+                return False, None
+
+            # Find the forecast result closest to now
+            closest_result = OptimizationResult.objects.filter(
+                optimization_run=latest_run,
+                timestamp_utc__lte=now + timedelta(minutes=30),
+                timestamp_utc__gte=now - timedelta(minutes=30)
+            ).order_by('timestamp_utc').first()
+
+            if not closest_result or closest_result.abay_elev_ft is None:
+                return False, None
+
+            forecast_elev = closest_result.abay_elev_ft
+            deviation = abs(current_elev - forecast_elev)
+            max_deviation = alert.threshold_value
+
+            if deviation > max_deviation:
+                direction = "above" if current_elev > forecast_elev else "below"
+                message = (
+                    f"ABAY FORECAST DEVIATION: Current elevation {current_elev:.1f} ft is "
+                    f"{deviation:.1f} ft {direction} forecast of {forecast_elev:.1f} ft "
+                    f"(exceeds limit of {max_deviation:.1f} ft). "
+                    f"Time: {timezone.now().strftime('%H:%M')} PT"
+                )
+                return True, message
+
+        except Exception as e:
+            logger.error(f"Error checking ABAY forecast deviation: {e}")
+
+        return False, None
+
     def fetch_current_pi_data(self) -> Optional[Dict]:
         """
         Enhanced to include OXPH setpoint for deviation alerts
@@ -628,6 +746,7 @@ class AlertingService:
                 'oxph_power': current_state.get('Oxbow_Power'),
                 'oxph_setpoint': current_state.get('Oxbow_Power_Setpoint'),  # Add setpoint
                 'r4_flow': current_state.get('R4_Flow'),
+                'r11_flow': current_state.get('R11_Flow'),
                 'r30_flow': current_state.get('R30_Flow'),
                 'r20_flow': current_state.get('R20_Flow'),
                 'r5l_flow': current_state.get('R5L_Flow'),

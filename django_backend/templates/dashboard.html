@@ -252,7 +252,7 @@
                                 <span>Actual Elevation</span>
                             </div>
                             <div class="legend-item" data-chart="elevation" data-dataset="1">
-                                <div class="legend-color" style="background: #f39c12;"></div>
+                                <div class="legend-color" style="background: none; border-bottom: 3px dashed #f39c12;"></div>
                                 <span>Bias Corrected Expected</span>
                             </div>
                             <div class="legend-item" data-chart="elevation" data-dataset="2">
@@ -260,7 +260,7 @@
                                 <span>Optimized Forecast</span>
                             </div>
                             <div class="legend-item" data-chart="elevation" data-dataset="3">
-                                <div class="legend-color" style="background: #dc3545; border-style: dashed;"></div>
+                                <div class="legend-color" style="background: none; border-bottom: 3px dashed #dc3545;"></div>
                                 <span>Float Level</span>
                             </div>
                         </div>
@@ -733,255 +733,217 @@
                 </div>
             </div>
 
-            <!-- Replace the alerts tab content in dashboard.html with this enhanced version -->
             <div id="alerts" class="tab-content">
                 <div class="alert-manager">
                     <div class="control-section">
-            <h3>Alert Configuration</h3>
-            <p>Configure alerts for flows, elevations, and operational parameters</p>
-        </div>
+                        <h3>Alert Configuration</h3>
+                        <p>Configure alerts for flows, elevations, and operational parameters. Alerts fire once when a threshold is crossed, then re-arm after the value returns to the safe zone.</p>
+                    </div>
 
                     <!-- Alert Categories with Accordion -->
                     <div class="alert-accordion" id="alertAccordion">
 
-            <!-- Flows Category -->
-            <div class="alert-category">
-                <div class="category-header" onclick="toggleCategory('flowsCategory')">
-                    <h4>
-                        <i class="category-icon">▼</i>
-                        Flows
-                    </h4>
-                    <span class="category-status">3 active alerts</span>
-                </div>
-                <div id="flowsCategory" class="category-content active">
-                    <form id="flowsAlertForm">
-                        <table class="alert-table">
-                            <thead>
-                                <tr>
-                                    <th>Location</th>
-                                    <th>Lower Limit (CFS)</th>
-                                    <th>Upper Limit (CFS)</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <th>R4</th>
-                                    <td><input type="number" class="form-control" id="r4_lo" placeholder="Not Set" value="400"></td>
-                                    <td><input type="number" class="form-control" id="r4_hi" placeholder="Not Set" value="500"></td>
-                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r4')">Save</button></td>
-                                </tr>
-                                <tr>
-                                    <th>R11</th>
-                                    <td><input type="number" class="form-control" id="r11_lo" placeholder="Not Set" value="300"></td>
-                                    <td><input type="number" class="form-control" id="r11_hi" placeholder="Not Set" value="9000"></td>
-                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r11')">Save</button></td>
-                                </tr>
-                                <tr>
-                                    <th>R30</th>
-                                    <td><input type="number" class="form-control" id="r30_lo" placeholder="Not Set" value="80"></td>
-                                    <td><input type="number" class="form-control" id="r30_hi" placeholder="Not Set" value="350"></td>
-                                    <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r30')">Save</button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </form>
-                </div>
-            </div>
-
-            <!-- After Bay Category -->
-            <div class="alert-category">
-                <div class="category-header" onclick="toggleCategory('afterbayCategory')">
-                    <h4>
-                        <i class="category-icon">▶</i>
-                        After Bay
-                    </h4>
-                    <span class="category-status">2 active alerts</span>
-                </div>
-                <div id="afterbayCategory" class="category-content">
-                    <form id="afterbayAlertForm">
-                        <table class="alert-table">
-                            <thead>
-                                <tr>
-                                    <th>Parameter</th>
-                                    <th>Lower Limit</th>
-                                    <th>Upper Limit</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <th>Elevation (ft)</th>
-                                    <td><input type="number" class="form-control" id="afterbay_lo" step="0.1" placeholder="Not Set" value="1166.5"></td>
-                                    <td><input type="number" class="form-control" id="afterbay_hi" step="0.1" placeholder="Not Set" value="1176.0"></td>
-                                    <td><button type="button" class="btn btn-sm" onclick="saveAfterbayAlert()">Save</button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div class="alert-option">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="floatChangeAlert" checked>
-                                Alert if Float Level Changes
-                            </label>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Recreational Releases Category -->
-            <div class="alert-category">
-                <div class="category-header" onclick="toggleCategory('raftingCategory')">
-                    <h4>
-                        <i class="category-icon">▶</i>
-                        Recreational Releases
-                    </h4>
-                    <span class="category-status">Rafting alerts active</span>
-                </div>
-                <div id="raftingCategory" class="category-content">
-                    <form id="raftingAlertForm">
-                        <table class="alert-table">
-                            <thead>
-                                <tr>
-                                    <th>Rafting Times</th>
-                                    <th>Start Time</th>
-                                    <th>End Time</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <th>Today</th>
-                                    <td><input type="time" class="form-control" id="today_recStart" placeholder="Rafting Time"></td>
-                                    <td><input type="time" class="form-control" id="today_recEnd" placeholder="Rafting Time"></td>
-                                </tr>
-                                <tr>
-                                    <th>Tomorrow</th>
-                                    <td><input type="time" class="form-control" id="tomorrow_recStart" placeholder="Rafting Time"></td>
-                                    <td><input type="time" class="form-control" id="tomorrow_recEnd" placeholder="Rafting Time"></td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <div class="ramp-buffer-section">
-                            <h5>OXPH Ramp Timing Alerts</h5>
-                            <p class="help-text">Alert if OXPH setpoint is not adjusted in time for rafting schedule</p>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Ramp Up Buffer (minutes)</label>
-                                    <input type="number" class="form-control" id="rampup_oxbow" placeholder="Minutes" value="90" min="0">
-                                    <small>Alert this many minutes before rafting starts</small>
-                                </div>
-                                <div class="form-group">
-                                    <label>Ramp Down Buffer (minutes)</label>
-                                    <input type="number" class="form-control" id="rampdown_oxbow" placeholder="Minutes" value="15" min="0">
-                                    <small>Alert this many minutes before rafting ends</small>
-                                </div>
+                        <!-- Flows Category -->
+                        <div class="alert-category">
+                            <div class="category-header" onclick="toggleCategory('flowsCategory')">
+                                <h4><i class="category-icon">▼</i> Flows</h4>
+                                <span class="category-status" id="flowsCategoryStatus">--</span>
+                            </div>
+                            <div id="flowsCategory" class="category-content active">
+                                <form id="flowsAlertForm">
+                                    <table class="alert-table">
+                                        <thead>
+                                            <tr><th>Location</th><th>Lower Limit (CFS)</th><th>Upper Limit (CFS)</th><th>Actions</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <th>R4</th>
+                                                <td><input type="number" class="form-control" id="r4_lo" placeholder="Not Set"></td>
+                                                <td><input type="number" class="form-control" id="r4_hi" placeholder="Not Set"></td>
+                                                <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r4')">Save</button></td>
+                                            </tr>
+                                            <tr>
+                                                <th>R11</th>
+                                                <td><input type="number" class="form-control" id="r11_lo" placeholder="Not Set"></td>
+                                                <td><input type="number" class="form-control" id="r11_hi" placeholder="Not Set"></td>
+                                                <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r11')">Save</button></td>
+                                            </tr>
+                                            <tr>
+                                                <th>R30</th>
+                                                <td><input type="number" class="form-control" id="r30_lo" placeholder="Not Set"></td>
+                                                <td><input type="number" class="form-control" id="r30_hi" placeholder="Not Set"></td>
+                                                <td><button type="button" class="btn btn-sm" onclick="saveFlowAlert('r30')">Save</button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </form>
                             </div>
                         </div>
 
-                        <button type="button" class="btn" onclick="saveRaftingAlerts()">Save Rafting Alerts</button>
-                    </form>
-                </div>
-            </div>
+                        <!-- Afterbay Category -->
+                        <div class="alert-category">
+                            <div class="category-header" onclick="toggleCategory('afterbayCategory')">
+                                <h4><i class="category-icon">▶</i> Afterbay</h4>
+                                <span class="category-status" id="afterbayCategoryStatus">--</span>
+                            </div>
+                            <div id="afterbayCategory" class="category-content">
+                                <form id="afterbayAlertForm">
+                                    <table class="alert-table">
+                                        <thead>
+                                            <tr><th>Parameter</th><th>Lower Limit</th><th>Upper Limit</th><th>Actions</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <th>Elevation (ft)</th>
+                                                <td><input type="number" class="form-control" id="afterbay_lo" step="0.1" placeholder="Not Set"></td>
+                                                <td><input type="number" class="form-control" id="afterbay_hi" step="0.1" placeholder="Not Set"></td>
+                                                <td><button type="button" class="btn btn-sm" onclick="saveAfterbayAlert()">Save</button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div class="alert-option" style="margin-top: 12px;">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="floatChangeAlert">
+                                            Alert if Float Level Changes
+                                        </label>
+                                    </div>
+                                    <div class="form-group" style="margin-top: 8px;">
+                                        <label>ABAY Forecast Deviation Limit (ft)</label>
+                                        <input type="number" class="form-control" id="abay_forecast_dev" step="0.1" placeholder="e.g. 1.0" style="max-width: 200px;">
+                                        <small class="help-text">Alert when actual ABAY level deviates from optimization forecast by this amount</small>
+                                        <button type="button" class="btn btn-sm" onclick="saveAbayForecastDevAlert()" style="margin-top: 6px;">Save</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
 
-            <!-- Generation Category -->
-            <div class="alert-category">
-                <div class="category-header" onclick="toggleCategory('generationCategory')">
-                    <h4>
-                        <i class="category-icon">▶</i>
-                        Generation
-                    </h4>
-                    <span class="category-status">OXPH deviation monitoring</span>
-                </div>
-                <div id="generationCategory" class="category-content">
-                    <form id="generationAlertForm">
-                        <table class="alert-table">
-                            <thead>
-                                <tr>
-                                    <th>Unit</th>
-                                    <th>Max Deviation (MW)</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <th>OXPH</th>
-                                    <td><input type="number" class="form-control" id="oxbow_deviation" step="0.1" placeholder="Not Set" value="0.5"></td>
-                                    <td><button type="button" class="btn btn-sm" onclick="saveGenerationAlert()">Save</button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <p class="help-text">Alert when OXPH deviates from setpoint by more than this amount</p>
-                    </form>
-                </div>
-            </div>
+                        <!-- Recreational Releases Category -->
+                        <div class="alert-category">
+                            <div class="category-header" onclick="toggleCategory('raftingCategory')">
+                                <h4><i class="category-icon">▶</i> Recreational Releases</h4>
+                                <span class="category-status" id="raftingCategoryStatus">--</span>
+                            </div>
+                            <div id="raftingCategory" class="category-content">
+                                <form id="raftingAlertForm">
+                                    <table class="alert-table">
+                                        <thead>
+                                            <tr><th>Rafting Times</th><th>Start Time</th><th>End Time</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <th>Today</th>
+                                                <td><input type="time" class="form-control" id="today_recStart"></td>
+                                                <td><input type="time" class="form-control" id="today_recEnd"></td>
+                                            </tr>
+                                            <tr>
+                                                <th>Tomorrow</th>
+                                                <td><input type="time" class="form-control" id="tomorrow_recStart"></td>
+                                                <td><input type="time" class="form-control" id="tomorrow_recEnd"></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div class="ramp-buffer-section">
+                                        <h5>OXPH Ramp Timing Alerts</h5>
+                                        <p class="help-text">Alert if OXPH setpoint is not adjusted in time for rafting schedule</p>
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label>Ramp Up Buffer (minutes)</label>
+                                                <input type="number" class="form-control" id="rampup_oxbow" placeholder="Minutes" value="90" min="0">
+                                                <small>Alert this many minutes before rafting starts</small>
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Ramp Down Buffer (minutes)</label>
+                                                <input type="number" class="form-control" id="rampdown_oxbow" placeholder="Minutes" value="15" min="0">
+                                                <small>Alert this many minutes before rafting ends</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn" onclick="saveRaftingAlerts()">Save Rafting Alerts</button>
+                                </form>
+                            </div>
+                        </div>
 
-        </div>
+                        <!-- Generation Category -->
+                        <div class="alert-category">
+                            <div class="category-header" onclick="toggleCategory('generationCategory')">
+                                <h4><i class="category-icon">▶</i> Generation</h4>
+                                <span class="category-status" id="generationCategoryStatus">--</span>
+                            </div>
+                            <div id="generationCategory" class="category-content">
+                                <form id="generationAlertForm">
+                                    <table class="alert-table">
+                                        <thead>
+                                            <tr><th>Unit</th><th>Max Deviation (MW)</th><th>Actions</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <th>OXPH</th>
+                                                <td><input type="number" class="form-control" id="oxbow_deviation" step="0.1" placeholder="Not Set"></td>
+                                                <td><button type="button" class="btn btn-sm" onclick="saveGenerationAlert()">Save</button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p class="help-text">Alert when OXPH deviates from setpoint by more than this amount</p>
+
+                                    <div style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                                        <h5>Middle Fork RT vs DA Monitoring</h5>
+                                        <p class="help-text">Alert when Middle Fork real-time generation deviates from Day-Ahead awards</p>
+                                        <div class="form-group" style="margin-top: 8px;">
+                                            <label>MF RT vs DA Deviation Limit (MW)</label>
+                                            <input type="number" class="form-control" id="mf_rt_da_deviation" step="0.1" placeholder="e.g. 2.0" style="max-width: 200px;">
+                                            <button type="button" class="btn btn-sm" onclick="saveMfRtDaAlert()" style="margin-top: 6px;">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                    </div>
 
                     <!-- Alert History Section -->
                     <div class="control-section" style="margin-top: 30px;">
-            <h4>Recent Alert History</h4>
-            <div id="alertHistoryList" class="alert-history-list">
-                <!-- Alert history will be populated here -->
-                <div class="alert-history-item">
-                    <span class="alert-time">10:35 AM</span>
-                    <span class="alert-type warning">R4 Low Flow</span>
-                    <span class="alert-value">385 CFS</span>
-                    <span class="alert-status">Acknowledged</span>
-                </div>
-                <div class="alert-history-item">
-                    <span class="alert-time">09:15 AM</span>
-                    <span class="alert-type critical">OXPH Ramp Alert</span>
-                    <span class="alert-value">Not adjusted for rafting</span>
-                    <span class="alert-status">Active</span>
-                </div>
-            </div>
-        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4>Recent Alert History</h4>
+                            <button class="btn btn-sm" onclick="loadAlertHistory()">Refresh</button>
+                        </div>
+                        <div id="alertHistoryList" class="alert-history-list">
+                            <p style="color: #7f8c8d; text-align: center;">Loading alert history...</p>
+                        </div>
+                    </div>
 
                     <!-- Notification Test Section -->
-                    <div class="control-section" style="margin-top: 30px; border-top: 2px solid #ecf0f1; padding-top: 20px;">
+                    <div class="control-section" style="margin-top: 30px; border-top: 2px solid rgba(255,255,255,0.1); padding-top: 20px;">
                         <h4>Test Notification System</h4>
                         <p style="color: #7f8c8d; margin-bottom: 15px;">
-        Test your notification settings to ensure alerts will be delivered correctly.
-    </p>
-
-    <div class="notification-test-container" style="display: flex; gap: 15px; align-items: flex-start;">
-        <div style="flex: 1;">
-            <label for="testNotificationType">Notification Type:</label>
-            <select class="form-control" id="testNotificationType" style="margin-top: 5px;">
-                <option value="browser">Browser Notification</option>
-                <option value="email">Email</option>
-                <option value="sms">SMS Text Message</option>
-                <option value="voice">Voice Call</option>
-            </select>
-        </div>
-
-        <button class="btn" onclick="testNotificationSystem()" id="testNotificationBtn" style="margin-top: 24px;">
-            <span id="testNotificationBtnText">Send Test</span>
-        </button>
-    </div>
-
-    <!-- Test Results Display -->
-    <div id="testResultsContainer" style="display: none; margin-top: 20px;">
-        <h5>Test Results:</h5>
-        <div id="testResults" class="test-results">
-            <!-- Results will be populated here -->
-        </div>
-    </div>
-</div>
+                            Test your notification settings to ensure alerts will be delivered correctly.
+                        </p>
+                        <div class="notification-test-container" style="display: flex; gap: 15px; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <label for="testNotificationType">Notification Type:</label>
+                                <select class="form-control" id="testNotificationType" style="margin-top: 5px;">
+                                    <option value="browser">Browser Notification</option>
+                                    <option value="email">Email</option>
+                                    <option value="sms">SMS Text Message</option>
+                                    <option value="voice">Voice Call</option>
+                                </select>
+                            </div>
+                            <button class="btn" onclick="testNotificationSystem()" id="testNotificationBtn" style="margin-top: 24px;">
+                                <span id="testNotificationBtnText">Send Test</span>
+                            </button>
+                        </div>
+                        <div id="testResultsContainer" style="display: none; margin-top: 20px;">
+                            <h5>Test Results:</h5>
+                            <div id="testResults" class="test-results"></div>
+                        </div>
+                    </div>
 
                     <!-- Link to Profile for Notification Settings -->
                     <div class="control-section" style="margin-top: 30px; text-align: center;">
-                        <div style="padding: 20px; background: #f8f9fa; border-radius: 5px;">
-                            <p style="margin-bottom: 15px; color: #6c757d;">
-            <i>Configure your notification preferences (email, SMS, browser notifications)</i>
-        </p>
-                            <a href="/profile/" class="btn">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 5px;">
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                    <path d="M12 1v6m0 6v6m11-11h-6m-6 0H1"></path>
-                                </svg>
-                                Notification Settings
-                            </a>
+                        <div style="padding: 20px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                            <p style="margin-bottom: 15px; color: #7f8c8d;">
+                                Configure your phone number and notification preferences
+                            </p>
+                            <a href="/profile/" class="btn">Notification Settings</a>
                         </div>
                     </div>
 

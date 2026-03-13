@@ -514,8 +514,11 @@ class AlertThreshold(models.Model):
         ('afterbay_elevation', 'Afterbay Elevation (ft)'),
         ('oxph_power', 'OXPH Power (MW)'),
         ('r4_flow', 'R4 Flow (CFS)'),
+        ('r11_flow', 'R11 Flow (CFS)'),
         ('r30_flow', 'R30 Flow (CFS)'),
         ('mfra_power', 'MFRA Power (MW)'),
+        ('mf_rt_vs_da', 'MF RT vs DA Deviation (MW)'),
+        ('abay_forecast_deviation', 'ABAY Forecast Deviation (ft)'),
         ('float_level', 'Float Level (ft)'),
         ('net_flow', 'Net Flow (CFS)'),
         ('spillage', 'Spillage (AF)'),
@@ -541,6 +544,8 @@ class AlertThreshold(models.Model):
         ('rafting_ramp', 'Rafting Ramp Alert'),
         ('float_change', 'Float Level Change'),
         ('deviation', 'Deviation Alert'),
+        ('mf_rt_vs_da', 'MF RT vs DA Deviation'),
+        ('abay_forecast_dev', 'ABAY Forecast Deviation'),
     ]
 
     category = models.CharField(
@@ -569,6 +574,12 @@ class AlertThreshold(models.Model):
         null=True,
         blank=True,
         help_text="Last known value for change detection"
+    )
+
+    # Re-arm logic: alert stays "armed=False" after triggering until value returns to safe zone
+    is_armed = models.BooleanField(
+        default=True,
+        help_text="False after alert fires; re-arms when value returns to safe zone"
     )
 
     # Add methods for special alert checking
@@ -674,30 +685,52 @@ class AlertThreshold(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.name} ({self.parameter})"
 
-    def check_condition(self, value):
-        """Check if the given value triggers this alert"""
-        if not self.is_active:
-            return False
-
+    def _value_violates(self, value):
+        """Pure threshold check without re-arm or cooldown logic"""
         try:
             value = float(value)
-
             if self.condition == 'greater_than':
                 return value > self.threshold_value
             elif self.condition == 'less_than':
                 return value < self.threshold_value
             elif self.condition == 'equal_to':
-                return abs(value - self.threshold_value) < 0.01  # Small tolerance for floats
+                return abs(value - self.threshold_value) < 0.01
             elif self.condition == 'between':
                 return self.threshold_value <= value <= (self.threshold_value_max or self.threshold_value)
             elif self.condition == 'outside_range':
                 return value < self.threshold_value or value > (self.threshold_value_max or self.threshold_value)
-
         except (ValueError, TypeError):
             return False
-
         return False
 
+    def check_condition(self, value):
+        """Check if the given value triggers this alert (with re-arm logic).
+
+        Returns True only if the value violates the threshold AND the alert is armed.
+        After triggering, the alert is disarmed (is_armed=False) and must be re-armed
+        by calling rearm_if_safe() when the value returns to the safe zone.
+        """
+        if not self.is_active:
+            return False
+        return self.is_armed and self._value_violates(value)
+
+    def rearm_if_safe(self, value):
+        """Re-arm the alert if the current value is back in the safe zone.
+
+        Called every check cycle. If the alert was previously triggered (is_armed=False)
+        and the value is no longer violating the threshold, re-arm it so it can fire again.
+        """
+        if self.is_armed:
+            return  # Already armed, nothing to do
+        if not self._value_violates(value):
+            self.is_armed = True
+            self.save(update_fields=['is_armed'])
+
+    def disarm(self):
+        """Disarm after triggering so it won't fire again until value returns to safe zone."""
+        if self.is_armed:
+            self.is_armed = False
+            self.save(update_fields=['is_armed'])
 
     def is_in_cooldown(self):
         """Check if alert is in cooldown period"""

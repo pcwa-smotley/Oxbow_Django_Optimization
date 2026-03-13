@@ -317,9 +317,11 @@ class CAISODAAwardsView(APIView):
                 except Exception as row_err:
                     logger.warning(f"Skipping raw award row: {row_err}")
 
-            # Aggregate and store summaries
+            # Aggregate and store summaries (aggregate_hourly_mw filters to
+            # MDFKRL_2_PROJCT CLEARED EN only, so resource_count = 1)
             hourly_series = aggregate_hourly_mw(raw_df)
             summary_records = []
+            pacific = __import__('pytz').timezone('America/Los_Angeles')
             if hourly_series is not None:
                 for ts, mw_val in hourly_series.items():
                     obj, _ = CAISODAAwardSummary.objects.update_or_create(
@@ -327,12 +329,15 @@ class CAISODAAwardsView(APIView):
                         interval_start_utc=ts.to_pydatetime(),
                         defaults={
                             'total_mw': float(mw_val),
-                            'resource_count': len(raw_df['resource'].unique()) if 'resource' in raw_df.columns else 1,
+                            'resource_count': 1,
                         },
                     )
+                    # Include chart-compatible label (matches _prepare_chart_data format)
+                    ts_pt = ts.tz_convert(pacific)
                     summary_records.append({
                         'interval_start_utc': ts.isoformat(),
                         'total_mw': float(mw_val),
+                        'label': ts_pt.strftime('%a %b %d, %H'),
                     })
 
             return Response({

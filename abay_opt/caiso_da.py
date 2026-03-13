@@ -2,9 +2,10 @@
 """
 CAISO Day Ahead Awards service for MFRA (Middle Fork) forecast.
 
-Wraps caiso_config/Programs/caiso_api.py to fetch DAM awards for MFP1
-and provide hourly MW Series aligned to the optimization forecast index.
+Primary: NCPA Data Portal REST API (caiso_config/Programs/ncpa_api.py)
+Fallback: CAISO B2B SOAP API (caiso_config/Programs/caiso_api.py)
 
+Provides hourly MW Series aligned to the optimization forecast index.
 Gracefully degrades to (None, 'persistence') on any failure.
 """
 
@@ -21,14 +22,39 @@ logger = logging.getLogger(__name__)
 
 PACIFIC_TZ = pytz.timezone('America/Los_Angeles')
 
+# MFRA resource — only MDFKRL_2_PROJCT maps to Middle Fork Ralston Aggregate
+MFRA_RESOURCE = 'MDFKRL_2_PROJCT'
+
+
 # ---------------------------------------------------------------------------
-# Lazy import of caiso_api — adds Programs/ to sys.path on first call
+# Lazy imports — NCPA (primary) and CAISO B2B (fallback)
 # ---------------------------------------------------------------------------
+_ncpa_api = None
 _caiso_api = None
 
 
+def _get_ncpa_api():
+    """Lazy-load ncpa_api module."""
+    global _ncpa_api
+    if _ncpa_api is not None:
+        return _ncpa_api
+
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        programs_dir = os.path.join(project_root, 'caiso_config', 'Programs')
+        if programs_dir not in sys.path:
+            sys.path.insert(0, programs_dir)
+
+        from caiso_config.Programs import ncpa_api
+        _ncpa_api = ncpa_api
+        return _ncpa_api
+    except ImportError as e:
+        logger.warning(f"Cannot import ncpa_api: {e}")
+        return None
+
+
 def _get_caiso_api():
-    """Lazy-load caiso_api module, handling import path issues."""
+    """Lazy-load caiso_api module (fallback)."""
     global _caiso_api
     if _caiso_api is not None:
         return _caiso_api
@@ -43,21 +69,16 @@ def _get_caiso_api():
         _caiso_api = caiso_api
         return _caiso_api
     except ImportError as e:
-        logger.warning(f"Cannot import caiso_api: {e}. DA awards will not be available.")
+        logger.warning(f"Cannot import caiso_api: {e}. CAISO B2B fallback unavailable.")
         return None
 
 
 # ---------------------------------------------------------------------------
-# Core fetch + aggregation
+# Core fetch — tries NCPA first, falls back to CAISO B2B
 # ---------------------------------------------------------------------------
 
 def _trade_date_to_utc_range(trade_dt: date) -> Tuple[str, str]:
-    """
-    Convert a CAISO trade/delivery date to UTC start/end for the API query.
-
-    CAISO market days run in Pacific Prevailing Time.
-    Delivery date Feb 8 → midnight-to-midnight PPT → UTC range.
-    """
+    """Convert a CAISO trade/delivery date to UTC start/end."""
     start_pt = PACIFIC_TZ.localize(datetime(trade_dt.year, trade_dt.month, trade_dt.day, 0, 0, 0))
     end_pt = start_pt + timedelta(days=1)
 
@@ -74,33 +95,56 @@ def fetch_mfp1_da_awards(trade_dt: date) -> Optional[pd.DataFrame]:
     """
     Fetch DAM awards for SC_ID='MFP1' for a given delivery date.
 
+    Tries NCPA Data Portal first (simple REST), then falls back to
+    CAISO B2B SOAP API.
+
     Returns DataFrame with columns [resource, intervalStartTime, intervalEndTime, MW, ...]
     or None on failure.
     """
+    # --- Primary: NCPA Data Portal ---
+    ncpa = _get_ncpa_api()
+    if ncpa is not None:
+        try:
+            logger.info(f"Fetching DA awards via NCPA Data Portal for {trade_dt}")
+            df = ncpa.fetch_da_energy_schedules(trade_dt)
+            if df is not None and not df.empty:
+                logger.info(f"NCPA returned {len(df)} DA award records for {trade_dt}")
+                return df
+            logger.info(f"No DA awards from NCPA for {trade_dt}, trying CAISO B2B fallback")
+        except Exception as e:
+            logger.warning(f"NCPA DA awards failed: {e}, trying CAISO B2B fallback")
+
+    # --- Fallback: CAISO B2B SOAP ---
     api = _get_caiso_api()
     if api is None:
+        logger.warning("Neither NCPA nor CAISO B2B available for DA awards")
         return None
 
     try:
         start_str, end_str = _trade_date_to_utc_range(trade_dt)
-        logger.info(f"Fetching CAISO DA awards for {trade_dt} ({start_str} to {end_str})")
+        logger.info(f"Fetching CAISO DA awards via B2B for {trade_dt} ({start_str} to {end_str})")
         df = api.fetch_dam_awards(start_str, end_str)
 
         if df is None or df.empty:
-            logger.info(f"No DA awards returned for {trade_dt}")
+            logger.info(f"No DA awards returned from CAISO B2B for {trade_dt}")
             return None
 
-        logger.info(f"Received {len(df)} DA award records for {trade_dt}")
+        logger.info(f"CAISO B2B returned {len(df)} DA award records for {trade_dt}")
         return df
 
     except Exception as e:
-        logger.error(f"Error fetching CAISO DA awards for {trade_dt}: {e}", exc_info=True)
+        logger.error(f"Error fetching CAISO DA awards: {e}", exc_info=True)
         return None
 
 
+# ---------------------------------------------------------------------------
+# Aggregation
+# ---------------------------------------------------------------------------
+
 def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
     """
-    Filter to energy awards and sum MW across all MFP1 resources per hour.
+    Filter DA awards to MFRA resource (MDFKRL_2_PROJCT), CLEARED schedule type,
+    and energy product, then sum MW per hour.
 
     Returns a pd.Series indexed by interval_start (UTC datetime), values = total MW.
     """
@@ -109,6 +153,27 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
 
     try:
         df = awards_df.copy()
+
+        # Filter to MFRA resource only (MDFKRL_2_PROJCT)
+        if 'resource' in df.columns:
+            mfra_mask = df['resource'] == MFRA_RESOURCE
+            if mfra_mask.any():
+                df = df[mfra_mask]
+                logger.info(f"Filtered to MFRA resource ({MFRA_RESOURCE}): {len(df)} records")
+            else:
+                logger.warning(f"No records found for MFRA resource ({MFRA_RESOURCE})")
+                return None
+
+        # Filter to CLEARED schedule type only (CLEARED = MARKET + SELF;
+        # summing all three would double-count)
+        if 'scheduleType' in df.columns:
+            cleared_mask = df['scheduleType'].str.upper() == 'CLEARED'
+            if cleared_mask.any():
+                df = df[cleared_mask]
+                logger.info(f"Filtered to CLEARED schedule type: {len(df)} records")
+            else:
+                logger.warning("No CLEARED schedule type found in DA awards")
+                return None
 
         # Filter to energy product if the column exists
         if 'productType' in df.columns:
@@ -124,7 +189,7 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
         df['interval_start'] = pd.to_datetime(df['intervalStartTime'], utc=True)
         df['mw_value'] = pd.to_numeric(df['MW'], errors='coerce').fillna(0)
 
-        # Sum MW across all resources for each hour
+        # Sum MW per hour (should be one record per hour after filtering)
         hourly = df.groupby('interval_start')['mw_value'].sum().sort_index()
         hourly.name = 'MFRA_MW_forecast'
 

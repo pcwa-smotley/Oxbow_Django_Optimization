@@ -1892,13 +1892,7 @@ function applyElevationChartData(chartData, animationMode = "default") {
   elevationChart.setOption({
     xAxis: { data: labels },
     yAxis: { min: yMin, max: yMax },
-    legend: {
-      show: true,
-      top: 5,
-      left: 'center',
-      textStyle: { fontSize: 11 },
-      data: ['Actual Elevation', biasLabel, 'Optimized Forecast', 'Float Level']
-    },
+    legend: { show: false },
     series: [
       actualElevSeries,
       {
@@ -5544,6 +5538,9 @@ function switchTab(tabName, event) {
       if (priceChart) priceChart.resize();
     } else if (tabName === "data") {
       if (forecastHot) forecastHot.render();
+    } else if (tabName === "alerts") {
+      loadAlerts();
+      loadAlertHistory();
     }
   }, 100);
 }
@@ -6112,6 +6109,8 @@ function fetchCAISODAAwards() {
                 'success'
             );
             updateMfraSourceIndicator('da_awards');
+            // Overlay DA awards onto the MFRA forecast chart line
+            applyDAAwardsToChart(data.hourly_data);
         } else {
             showNotification(
                 `No DA awards available for ${data.trade_date}. Using persistence.`,
@@ -6142,5 +6141,596 @@ function updateMfraSourceIndicator(source) {
     } else {
         badge.textContent = 'MFRA: Persistence';
         badge.classList.add('mfra-source-persistence');
+    }
+}
+
+function applyDAAwardsToChart(hourlyData) {
+    // Overlay DA award MW values onto the MFRA forecast chart line.
+    // Each entry has { label, total_mw } where label matches chart label format.
+    if (!latestChartData || !latestChartData.labels || !hourlyData || !hourlyData.length) return;
+
+    const labels = latestChartData.labels;
+    // Build a lookup: label -> MW value
+    const awardsByLabel = {};
+    for (const entry of hourlyData) {
+        if (entry.label && entry.total_mw != null) {
+            awardsByLabel[entry.label] = entry.total_mw;
+        }
+    }
+
+    // Update the MFRA forecast array where labels match
+    const forecast = latestChartData.mfra.forecast;
+    let updated = 0;
+    for (let i = 0; i < labels.length; i++) {
+        if (labels[i] in awardsByLabel) {
+            forecast[i] = awardsByLabel[labels[i]];
+            updated++;
+        }
+    }
+
+    if (updated > 0) {
+        console.log(`[DA Awards] Updated ${updated} hours on MFRA forecast chart`);
+        // Switch to MFRA view and refresh the chart
+        if (powerChartMode !== 'mfra') {
+            changePowerChartMode('mfra');
+        } else {
+            refreshPowerChart();
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERT MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** In-memory cache of the user's alerts from the API */
+let _userAlerts = [];
+
+/**
+ * Toggle an accordion category open/closed
+ */
+function toggleCategory(categoryId) {
+    const content = document.getElementById(categoryId);
+    if (!content) return;
+    const header = content.previousElementSibling;
+    const icon = header ? header.querySelector('.category-icon') : null;
+
+    if (content.classList.contains('active')) {
+        content.classList.remove('active');
+        if (icon) icon.textContent = '▶';
+    } else {
+        content.classList.add('active');
+        if (icon) icon.textContent = '▼';
+    }
+}
+
+/**
+ * Load all alerts from API and populate form fields
+ */
+async function loadAlerts() {
+    try {
+        const data = await apiCall('/api/alerts/');
+        if (data.status !== 'success') return;
+
+        _userAlerts = data.alerts || [];
+        console.log(`[Alerts] Loaded ${_userAlerts.length} alerts`);
+
+        // Clear all form fields first
+        ['r4_lo','r4_hi','r11_lo','r11_hi','r30_lo','r30_hi'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        ['afterbay_lo','afterbay_hi','oxbow_deviation','mf_rt_da_deviation','abay_forecast_dev'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const floatCb = document.getElementById('floatChangeAlert');
+        if (floatCb) floatCb.checked = false;
+
+        // Count active alerts per category
+        const catCounts = { flow: 0, afterbay: 0, rafting: 0, generation: 0 };
+
+        _userAlerts.forEach(a => {
+            if (!a.is_active) return;
+
+            // Flow alerts (R4, R11, R30) come in pairs: less_than = lo, greater_than = hi
+            const flowMap = {
+                r4_flow: 'r4', r11_flow: 'r11', r30_flow: 'r30'
+            };
+            if (flowMap[a.parameter]) {
+                const prefix = flowMap[a.parameter];
+                if (a.condition === 'less_than') {
+                    const el = document.getElementById(`${prefix}_lo`);
+                    if (el) el.value = a.threshold_value;
+                } else if (a.condition === 'greater_than') {
+                    const el = document.getElementById(`${prefix}_hi`);
+                    if (el) el.value = a.threshold_value;
+                }
+                catCounts.flow++;
+            }
+
+            // Afterbay elevation
+            if (a.parameter === 'afterbay_elevation' && a.special_type === 'standard') {
+                if (a.condition === 'less_than') {
+                    const el = document.getElementById('afterbay_lo');
+                    if (el) el.value = a.threshold_value;
+                } else if (a.condition === 'greater_than') {
+                    const el = document.getElementById('afterbay_hi');
+                    if (el) el.value = a.threshold_value;
+                }
+                catCounts.afterbay++;
+            }
+
+            // Float change alert
+            if (a.special_type === 'float_change') {
+                if (floatCb) floatCb.checked = true;
+                catCounts.afterbay++;
+            }
+
+            // ABAY forecast deviation
+            if (a.special_type === 'abay_forecast_dev') {
+                const el = document.getElementById('abay_forecast_dev');
+                if (el) el.value = a.threshold_value;
+                catCounts.afterbay++;
+            }
+
+            // OXPH deviation
+            if (a.special_type === 'deviation') {
+                const el = document.getElementById('oxbow_deviation');
+                if (el) el.value = a.threshold_value;
+                catCounts.generation++;
+            }
+
+            // MF RT vs DA
+            if (a.special_type === 'mf_rt_vs_da') {
+                const el = document.getElementById('mf_rt_da_deviation');
+                if (el) el.value = a.threshold_value;
+                catCounts.generation++;
+            }
+
+            // Rafting ramp
+            if (a.special_type === 'rafting_ramp') {
+                catCounts.rafting++;
+            }
+        });
+
+        // Update category status badges
+        _setCatStatus('flowsCategoryStatus', catCounts.flow, 'active alerts');
+        _setCatStatus('afterbayCategoryStatus', catCounts.afterbay, 'active alerts');
+        _setCatStatus('raftingCategoryStatus', catCounts.rafting, 'active alerts');
+        _setCatStatus('generationCategoryStatus', catCounts.generation, 'active alerts');
+
+    } catch (err) {
+        console.error('[Alerts] Load error:', err);
+    }
+}
+
+function _setCatStatus(elId, count, label) {
+    const el = document.getElementById(elId);
+    if (el) el.textContent = count > 0 ? `${count} ${label}` : 'No alerts';
+}
+
+/**
+ * Helper: create or update an alert via the API.
+ * If an existing alert matches (parameter + condition + special_type), update it; otherwise create.
+ */
+async function _upsertAlert({name, parameter, condition, threshold_value, threshold_value_max,
+                              severity, category, special_type, metadata, sms_notification}) {
+    // Find existing
+    const existing = _userAlerts.find(a =>
+        a.parameter === parameter &&
+        a.condition === condition &&
+        (a.special_type || 'standard') === (special_type || 'standard')
+    );
+
+    const payload = {
+        name, parameter, condition, threshold_value,
+        threshold_value_max: threshold_value_max || null,
+        severity: severity || 'warning',
+        category: category || 'general',
+        special_type: special_type || 'standard',
+        metadata: metadata || {},
+        email_notification: true,
+        browser_notification: true,
+        sms_notification: sms_notification !== undefined ? sms_notification : true,
+        is_active: true,
+        cooldown_minutes: 30
+    };
+
+    if (existing) {
+        // Update
+        await apiCall(`/api/alerts/${existing.id}/`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+    } else {
+        // Create
+        await apiCall('/api/alerts/', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    }
+}
+
+/**
+ * Delete an alert by finding it via parameter + condition + special_type
+ */
+async function _deleteAlertIfExists(parameter, condition, special_type) {
+    const existing = _userAlerts.find(a =>
+        a.parameter === parameter &&
+        a.condition === condition &&
+        (a.special_type || 'standard') === (special_type || 'standard')
+    );
+    if (existing) {
+        await apiCall(`/api/alerts/${existing.id}/`, { method: 'DELETE' });
+    }
+}
+
+/**
+ * Save flow alerts (R4, R11, R30) — each has a low (less_than) and high (greater_than)
+ */
+async function saveFlowAlert(location) {
+    try {
+        const loEl = document.getElementById(`${location}_lo`);
+        const hiEl = document.getElementById(`${location}_hi`);
+        const loVal = loEl ? parseFloat(loEl.value) : NaN;
+        const hiVal = hiEl ? parseFloat(hiEl.value) : NaN;
+        const param = `${location}_flow`;
+        const displayName = location.toUpperCase();
+
+        // Low alert
+        if (!isNaN(loVal)) {
+            await _upsertAlert({
+                name: `${displayName} Low Flow`,
+                parameter: param,
+                condition: 'less_than',
+                threshold_value: loVal,
+                severity: 'warning',
+                category: 'flow'
+            });
+        } else {
+            await _deleteAlertIfExists(param, 'less_than', 'standard');
+        }
+
+        // High alert
+        if (!isNaN(hiVal)) {
+            await _upsertAlert({
+                name: `${displayName} High Flow`,
+                parameter: param,
+                condition: 'greater_than',
+                threshold_value: hiVal,
+                severity: 'warning',
+                category: 'flow'
+            });
+        } else {
+            await _deleteAlertIfExists(param, 'greater_than', 'standard');
+        }
+
+        showNotification(`${displayName} flow alerts saved`, 'success');
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save flow error:', err);
+        showNotification('Failed to save flow alert', 'error');
+    }
+}
+
+/**
+ * Save Afterbay elevation alerts (low + high)
+ */
+async function saveAfterbayAlert() {
+    try {
+        const loVal = parseFloat(document.getElementById('afterbay_lo')?.value);
+        const hiVal = parseFloat(document.getElementById('afterbay_hi')?.value);
+
+        if (!isNaN(loVal)) {
+            await _upsertAlert({
+                name: 'ABAY Low Elevation',
+                parameter: 'afterbay_elevation',
+                condition: 'less_than',
+                threshold_value: loVal,
+                severity: 'critical',
+                category: 'afterbay'
+            });
+        } else {
+            await _deleteAlertIfExists('afterbay_elevation', 'less_than', 'standard');
+        }
+
+        if (!isNaN(hiVal)) {
+            await _upsertAlert({
+                name: 'ABAY High Elevation',
+                parameter: 'afterbay_elevation',
+                condition: 'greater_than',
+                threshold_value: hiVal,
+                severity: 'critical',
+                category: 'afterbay'
+            });
+        } else {
+            await _deleteAlertIfExists('afterbay_elevation', 'greater_than', 'standard');
+        }
+
+        // Float change alert
+        const floatChecked = document.getElementById('floatChangeAlert')?.checked;
+        if (floatChecked) {
+            await _upsertAlert({
+                name: 'Float Level Change',
+                parameter: 'float_level',
+                condition: 'greater_than',
+                threshold_value: 0.5,  // 0.5 ft sensitivity
+                severity: 'info',
+                category: 'afterbay',
+                special_type: 'float_change'
+            });
+        } else {
+            await _deleteAlertIfExists('float_level', 'greater_than', 'float_change');
+        }
+
+        showNotification('Afterbay alerts saved', 'success');
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save afterbay error:', err);
+        showNotification('Failed to save afterbay alerts', 'error');
+    }
+}
+
+/**
+ * Save ABAY forecast deviation alert
+ */
+async function saveAbayForecastDevAlert() {
+    try {
+        const val = parseFloat(document.getElementById('abay_forecast_dev')?.value);
+
+        if (!isNaN(val) && val > 0) {
+            await _upsertAlert({
+                name: 'ABAY Forecast Deviation',
+                parameter: 'abay_forecast_deviation',
+                condition: 'greater_than',
+                threshold_value: val,
+                severity: 'warning',
+                category: 'afterbay',
+                special_type: 'abay_forecast_dev'
+            });
+            showNotification('ABAY forecast deviation alert saved', 'success');
+        } else {
+            await _deleteAlertIfExists('abay_forecast_deviation', 'greater_than', 'abay_forecast_dev');
+            showNotification('ABAY forecast deviation alert removed', 'success');
+        }
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save ABAY forecast dev error:', err);
+        showNotification('Failed to save ABAY forecast deviation alert', 'error');
+    }
+}
+
+/**
+ * Save rafting ramp alerts
+ */
+async function saveRaftingAlerts() {
+    try {
+        const todayStart = document.getElementById('today_recStart')?.value;
+        const todayEnd = document.getElementById('today_recEnd')?.value;
+        const tomorrowStart = document.getElementById('tomorrow_recStart')?.value;
+        const tomorrowEnd = document.getElementById('tomorrow_recEnd')?.value;
+        const rampUp = parseInt(document.getElementById('rampup_oxbow')?.value) || 90;
+        const rampDown = parseInt(document.getElementById('rampdown_oxbow')?.value) || 15;
+
+        // Create/update today's ramp alert if times are set
+        if (todayStart) {
+            await _upsertAlert({
+                name: 'Rafting Ramp - Today',
+                parameter: 'oxph_power',
+                condition: 'less_than',
+                threshold_value: 5.8,
+                severity: 'critical',
+                category: 'rafting',
+                special_type: 'rafting_ramp',
+                metadata: {
+                    start_time: todayStart,
+                    end_time: todayEnd || '',
+                    day: 'today',
+                    ramp_up_buffer: rampUp,
+                    ramp_down_buffer: rampDown
+                }
+            });
+        }
+
+        if (tomorrowStart) {
+            await _upsertAlert({
+                name: 'Rafting Ramp - Tomorrow',
+                parameter: 'oxph_power',
+                condition: 'less_than',
+                threshold_value: 5.8,
+                severity: 'critical',
+                category: 'rafting',
+                special_type: 'rafting_ramp',
+                metadata: {
+                    start_time: tomorrowStart,
+                    end_time: tomorrowEnd || '',
+                    day: 'tomorrow',
+                    ramp_up_buffer: rampUp,
+                    ramp_down_buffer: rampDown
+                }
+            });
+        }
+
+        showNotification('Rafting alerts saved', 'success');
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save rafting error:', err);
+        showNotification('Failed to save rafting alerts', 'error');
+    }
+}
+
+/**
+ * Save OXPH deviation alert
+ */
+async function saveGenerationAlert() {
+    try {
+        const val = parseFloat(document.getElementById('oxbow_deviation')?.value);
+
+        if (!isNaN(val) && val > 0) {
+            await _upsertAlert({
+                name: 'OXPH Deviation',
+                parameter: 'oxph_power',
+                condition: 'greater_than',
+                threshold_value: val,
+                severity: 'warning',
+                category: 'generation',
+                special_type: 'deviation'
+            });
+            showNotification('OXPH deviation alert saved', 'success');
+        } else {
+            await _deleteAlertIfExists('oxph_power', 'greater_than', 'deviation');
+            showNotification('OXPH deviation alert removed', 'success');
+        }
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save generation error:', err);
+        showNotification('Failed to save generation alert', 'error');
+    }
+}
+
+/**
+ * Save MF RT vs DA deviation alert
+ */
+async function saveMfRtDaAlert() {
+    try {
+        const val = parseFloat(document.getElementById('mf_rt_da_deviation')?.value);
+
+        if (!isNaN(val) && val > 0) {
+            await _upsertAlert({
+                name: 'MF RT vs DA Deviation',
+                parameter: 'mf_rt_vs_da',
+                condition: 'greater_than',
+                threshold_value: val,
+                severity: 'warning',
+                category: 'generation',
+                special_type: 'mf_rt_vs_da'
+            });
+            showNotification('MF RT vs DA alert saved', 'success');
+        } else {
+            await _deleteAlertIfExists('mf_rt_vs_da', 'greater_than', 'mf_rt_vs_da');
+            showNotification('MF RT vs DA alert removed', 'success');
+        }
+        await loadAlerts();
+    } catch (err) {
+        console.error('[Alerts] Save MF RT vs DA error:', err);
+        showNotification('Failed to save MF RT vs DA alert', 'error');
+    }
+}
+
+/**
+ * Load and display alert history
+ */
+async function loadAlertHistory() {
+    const container = document.getElementById('alertHistoryList');
+    if (!container) return;
+
+    try {
+        const data = await apiCall('/api/alerts/history/');
+        const history = data.history || [];
+
+        if (history.length === 0) {
+            container.innerHTML = '<p style="color: #7f8c8d; text-align: center;">No alerts triggered yet</p>';
+            return;
+        }
+
+        container.innerHTML = history.map(log => {
+            const time = new Date(log.created_at);
+            const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const dateStr = time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const severityClass = log.severity || 'info';
+            const ackStatus = log.acknowledged ? 'Acknowledged' : 'Active';
+
+            return `<div class="alert-history-item">
+                <span class="alert-time">${dateStr} ${timeStr}</span>
+                <span class="alert-type ${severityClass}">${log.alert_name || 'Alert'}</span>
+                <span class="alert-value">${typeof log.triggered_value === 'number' ? log.triggered_value.toFixed(1) : log.triggered_value}</span>
+                <span class="alert-status">${ackStatus}</span>
+                <span class="alert-channels">
+                    ${log.email_sent ? '📧' : ''}${log.sms_sent ? '📱' : ''}${log.browser_shown ? '🖥' : ''}
+                </span>
+            </div>`;
+        }).join('');
+
+    } catch (err) {
+        console.error('[Alerts] Load history error:', err);
+        container.innerHTML = '<p style="color: #e74c3c;">Failed to load alert history</p>';
+    }
+}
+
+/**
+ * Test notification system (browser, email, SMS, voice)
+ */
+async function testNotificationSystem() {
+    const btn = document.getElementById('testNotificationBtn');
+    const btnText = document.getElementById('testNotificationBtnText');
+    const resultsContainer = document.getElementById('testResultsContainer');
+    const resultsDiv = document.getElementById('testResults');
+    const notifType = document.getElementById('testNotificationType')?.value || 'browser';
+
+    if (!btn || !btnText) return;
+
+    // Immediate feedback
+    btn.disabled = true;
+    btnText.textContent = 'Sending...';
+    showNotification(`Sending test ${notifType}...`, 'warning');
+
+    try {
+        // Build form data — endpoint uses request.POST.get()
+        const formData = new URLSearchParams();
+        formData.append('notification_type', notifType);
+
+        const response = await fetch('/api/test-notifications/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Server returned ${response.status}: ${text.substring(0, 200)}`);
+        }
+
+        const data = await response.json();
+
+        // Show results panel
+        if (resultsContainer) resultsContainer.style.display = 'block';
+        if (resultsDiv) {
+            const results = data.results || {};
+            const channelResult = results[notifType] || {};
+            const success = channelResult.success;
+            const message = channelResult.message || (success ? 'Test sent successfully' : 'Test failed');
+
+            resultsDiv.innerHTML = `
+                <div style="padding: 12px; border-radius: 6px; margin-bottom: 8px;
+                            background: ${success ? 'rgba(0,255,136,0.1)' : 'rgba(255,0,110,0.1)'};
+                            border: 1px solid ${success ? 'rgba(0,255,136,0.3)' : 'rgba(255,0,110,0.3)'};">
+                    <strong>${success ? 'Success' : 'Failed'}:</strong> ${message}
+                </div>`;
+
+            showNotification(
+                success ? `Test ${notifType} sent!` : `Test ${notifType} failed: ${message}`,
+                success ? 'success' : 'error'
+            );
+        }
+
+    } catch (err) {
+        console.error('[Alerts] Test notification error:', err);
+        if (resultsContainer) resultsContainer.style.display = 'block';
+        if (resultsDiv) {
+            resultsDiv.innerHTML = `
+                <div style="padding: 12px; border-radius: 6px; background: rgba(255,0,110,0.1); border: 1px solid rgba(255,0,110,0.3);">
+                    <strong>Error:</strong> ${err.message}
+                </div>`;
+        }
+        showNotification(`Notification test failed: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Send Test';
     }
 }
