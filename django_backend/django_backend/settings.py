@@ -1,9 +1,13 @@
-# django_backend/abay_web/settings.py
+# django_backend/django_backend/settings.py
 
 import mimetypes
 import os
 from pathlib import Path
 import configparser
+from dotenv import load_dotenv
+
+# Load .env file from project root (parent of django_backend/)
+load_dotenv(Path(__file__).resolve().parents[2] / '.env')
 
 mimetypes.add_type('text/css', '.css')
 mimetypes.add_type('application/javascript', '.js')
@@ -11,21 +15,15 @@ mimetypes.add_type('application/javascript', '.js')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-your-secret-key-here-change-in-production'
+# Security: read from environment, fall back to dev defaults
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-key-here-change-in-production')
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
-#*********
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-CELERY_TASK_ALWAYS_EAGER = False        # CHANGE To False in production
-#CELERY_TASK_EAGER_PROPAGATES = True     # CHANGE To False in production
-#***********************************************************************
-
+CELERY_TASK_ALWAYS_EAGER = False
 
 # Disable signup/registration in any third-party apps
 ACCOUNT_SIGNUP_ENABLED = False  # If using django-allauth
-
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
@@ -180,15 +178,6 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only for development
 
-# Celery Configuration (for background tasks)
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = TIME_ZONE
-
-
 # Channels (WebSocket) configuration
 CHANNEL_LAYERS = {
     'default': {
@@ -298,10 +287,7 @@ LOGGING = {
     },
 }
 
-# Site URL for email links
-SITE_URL = 'http://localhost:8000'  # Update for production
-
-# Get the correct path cor config file
+# Get the correct path for config file
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 config_path = PROJECT_ROOT / 'abay_opt' / 'config'
@@ -342,8 +328,16 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 # CSRF token should match session length
 CSRF_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 days
 
+# Production security (activate when DEBUG=False)
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
 
-
-
+# Site URL for email links (override via environment in production)
+SITE_URL = os.environ.get('SITE_URL', 'http://localhost:8000')
 
 

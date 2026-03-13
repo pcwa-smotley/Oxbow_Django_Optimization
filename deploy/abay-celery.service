@@ -1,0 +1,20 @@
+[Unit]
+Description=ABAY Celery Worker
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=abay
+Group=abay
+WorkingDirectory=/home/abay/abay-app/django_backend
+Environment="PATH=/home/abay/abay-app/venv/bin"
+EnvironmentFile=/home/abay/abay-app/.env
+ExecStart=/home/abay/abay-app/venv/bin/celery \
+    -A django_backend worker \
+    -l info \
+    --concurrency=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

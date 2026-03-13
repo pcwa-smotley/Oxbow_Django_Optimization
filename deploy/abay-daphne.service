@@ -1,0 +1,20 @@
+[Unit]
+Description=ABAY Daphne ASGI Server
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=abay
+Group=abay
+WorkingDirectory=/home/abay/abay-app/django_backend
+Environment="PATH=/home/abay/abay-app/venv/bin"
+EnvironmentFile=/home/abay/abay-app/.env
+ExecStart=/home/abay/abay-app/venv/bin/daphne \
+    -b 127.0.0.1 -p 8001 \
+    --access-log /home/abay/abay-app/django_backend/logs/daphne-access.log \
+    django_backend.asgi:application
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

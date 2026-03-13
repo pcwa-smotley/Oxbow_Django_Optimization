@@ -1,0 +1,20 @@
+[Unit]
+Description=ABAY Celery Beat Scheduler
+After=network.target redis-server.service abay-celery.service
+
+[Service]
+Type=simple
+User=abay
+Group=abay
+WorkingDirectory=/home/abay/abay-app/django_backend
+Environment="PATH=/home/abay/abay-app/venv/bin"
+EnvironmentFile=/home/abay/abay-app/.env
+ExecStart=/home/abay/abay-app/venv/bin/celery \
+    -A django_backend beat \
+    -l info \
+    --schedule=/home/abay/abay-app/django_backend/celerybeat-schedule
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

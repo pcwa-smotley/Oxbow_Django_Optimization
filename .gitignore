@@ -46,6 +46,9 @@ caiso_config/
 
 # Config files
 config*
+.env
+.env.*
+!deploy/.env.example
 *.p12
 *.yml
 *.pem
