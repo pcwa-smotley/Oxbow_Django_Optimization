@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import configparser
 from dotenv import load_dotenv
+import sentry_sdk
 
 # Load .env file from project root (parent of django_backend/)
 load_dotenv(Path(__file__).resolve().parents[2] / '.env')
@@ -19,6 +20,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-your-secret-key-here-change-in-production')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
+
+# Sentry error tracking (production only)
+if not DEBUG and os.environ.get('SENTRY_DSN'):
+    sentry_sdk.init(
+        dsn=os.environ.get('SENTRY_DSN'),
+        traces_sample_rate=0.1,
+        send_default_pii=True,
+    )
 
 CELERY_TASK_ALWAYS_EAGER = False
 
