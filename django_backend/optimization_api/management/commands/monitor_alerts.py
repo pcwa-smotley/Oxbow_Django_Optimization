@@ -118,6 +118,9 @@ class Command(BaseCommand):
                 self._update_system_status(SystemStatus, 'degraded', 'No PI data available')
                 return
 
+            # Broadcast PI data to all connected WebSocket clients
+            self._broadcast_pi_data(system_data)
+
             # Display current values
             self.stdout.write(
                 self.style.SUCCESS(f'📊 Current System State:')
@@ -289,6 +292,31 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.ERROR(f'❌ Twilio configuration error: {str(e)}')
             )
+
+    def _broadcast_pi_data(self, system_data):
+        """Broadcast PI data to all connected WebSocket clients"""
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                return
+
+            async_to_sync(channel_layer.group_send)(
+                "pi_broadcast",
+                {
+                    'type': 'send_pi_data',
+                    'data': {
+                        'type': 'pi_data_update',
+                        'pi_data': system_data,
+                        'timestamp': timezone.now().isoformat()
+                    }
+                }
+            )
+            logger.debug("Broadcast PI data to WebSocket clients")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast PI data: {e}")
 
     def _update_system_status(self, SystemStatus, status, message, triggered_count=0):
         """Update system status in database"""

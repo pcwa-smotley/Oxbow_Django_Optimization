@@ -1658,6 +1658,114 @@ function updateGaugeWidgets(data) {
 }
 
 // ============================================
+// LIVE PI DATA UPDATE (from alert monitor)
+// ============================================
+
+// Shared helper: apply PI data to gauges, status bar, and timestamp
+function applyPiDataUpdate(pi, ts) {
+  if (!pi) return;
+
+  // Update gauges
+  updateGaugeWidgets({
+    elevation: pi.afterbay_elevation,
+    oxph: pi.oxph_power
+  });
+
+  // Update status bar
+  if (typeof updateStatusBar === 'function') {
+    updateStatusBar({
+      elevation: pi.afterbay_elevation,
+      oxph: pi.oxph_power
+    });
+  }
+
+  // Update "Last PI Update" timestamp
+  _stampPiUpdateTime(ts);
+}
+
+function _stampPiUpdateTime(ts) {
+  var el = document.getElementById('lastPiUpdateTime');
+  if (el) {
+    var d = ts ? new Date(ts) : new Date();
+    el.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    var badge = document.getElementById('piUpdateBadge');
+    if (badge) {
+      badge.classList.add('pi-pulse');
+      setTimeout(function() { badge.classList.remove('pi-pulse'); }, 1500);
+    }
+  }
+}
+
+// Silent version of refreshCharts — fetches PI data + reloads charts without toast spam
+var _silentRefreshInProgress = false;
+async function silentPiRefresh() {
+  if (_silentRefreshInProgress) return;
+  _silentRefreshInProgress = true;
+  try {
+    console.log('[PI Auto-Refresh] Fetching fresh PI data...');
+    var piResult = await apiCall('/api/refresh-pi-data/', { method: 'POST' });
+    console.log('[PI Auto-Refresh] PI data stored:', piResult);
+    await loadLatestResults();
+    console.log('[PI Auto-Refresh] Charts reloaded.');
+  } catch (e) {
+    console.warn('[PI Auto-Refresh] Chart refresh failed:', e.message);
+  } finally {
+    _silentRefreshInProgress = false;
+  }
+}
+
+// Fetch live PI values and update gauges, status bar, and timestamp
+async function fetchLivePiState() {
+  try {
+    var resp = await apiCall('/api/current-state/');
+    if (!resp || !resp.abay_elevation_ft) return;
+    console.log('[PI Auto-Refresh] Live state:', resp.pi_live ? 'from PI' : 'fallback');
+    applyPiDataUpdate({
+      afterbay_elevation: resp.abay_elevation_ft,
+      oxph_power: resp.oxph_power_mw
+    }, resp.timestamp);
+  } catch (e) {
+    console.debug('[PI Auto-Refresh] Live state fetch failed:', e.message);
+  }
+}
+
+// WebSocket push path (from monitor_alerts broadcast)
+window.addEventListener('pi-data-update', function(e) {
+  applyPiDataUpdate(e.detail.piData, e.detail.timestamp);
+  silentPiRefresh();
+});
+
+// Polling: update gauges from live PI every 60s, refresh chart data every 5 min
+(function startPiPolling() {
+  var GAUGE_INTERVAL = 60000;   // 60s — gauges + status bar
+  var CHART_INTERVAL = 300000;  // 5min — full chart refresh (heavier)
+  var _lastWsUpdate = 0;
+  var _lastChartRefresh = 0;
+
+  window.addEventListener('pi-data-update', function() {
+    _lastWsUpdate = Date.now();
+  });
+
+  async function pollCycle() {
+    // Skip if WebSocket is delivering data
+    if (Date.now() - _lastWsUpdate < GAUGE_INTERVAL * 2) return;
+
+    // Always update gauges/status bar with current PI state
+    await fetchLivePiState();
+
+    // Refresh chart data less frequently
+    if (Date.now() - _lastChartRefresh > CHART_INTERVAL) {
+      await silentPiRefresh();
+      _lastChartRefresh = Date.now();
+    }
+  }
+
+  setInterval(pollCycle, GAUGE_INTERVAL);
+  // Initial update shortly after page load
+  setTimeout(pollCycle, 5000);
+})();
+
+// ============================================
 // 7-DAY SCHEDULE TIMELINE (ECharts)
 // ============================================
 let timelineChart = null;
@@ -4560,29 +4668,29 @@ const OPTIMIZATION_PROGRESS_STEPS = [
   {
     id: "load-forecast",
     threshold: 20,
-    keywords: ["loading forecast data", "load forecast data"],
+    keywords: ["loading forecast", "load forecast"],
   },
   {
     id: "setup-optimization",
     threshold: 40,
-    keywords: ["setting up optimization", "set up optimization"],
+    keywords: ["setting up optimization", "building milp"],
   },
   {
     id: "solve-optimization",
     threshold: 60,
-    keywords: ["solving optimization", "solve optimization"],
+    keywords: ["solving optimization", "cbc solver"],
   },
   {
     id: "recalculate-state",
-    threshold: 80,
-    keywords: ["recalculating state", "recalculate state"],
+    threshold: 75,
+    keywords: ["recalculating state", "computing setpoints", "generating output"],
   },
   {
     id: "finalize-results",
-    threshold: 95,
+    threshold: 90,
     keywords: [
       "finalizing results",
-      "finalize results",
+      "saving to database",
       "completed successfully",
     ],
   },
@@ -4871,7 +4979,7 @@ async function runOptimization() {
 // Replace the existing pollOptimizationProgress function with this enhanced version:
 
 async function pollOptimizationProgress(taskId, loadingMessageElement) {
-  const maxPolls = 60; // 5 minutes max (5 second intervals)
+  const maxPolls = 150; // 5 minutes max (2 second intervals)
   let pollCount = 0;
   let runId = null;
 
@@ -4936,7 +5044,7 @@ async function pollOptimizationProgress(taskId, loadingMessageElement) {
       }
 
       // Wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       pollCount++;
     } catch (error) {
       console.error("Progress polling error:", error);

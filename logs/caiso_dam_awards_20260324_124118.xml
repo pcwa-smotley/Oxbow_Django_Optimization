@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<outputDataType xmlns="http://www.caiso.com/soa/2006-06-13/StandardOutput.xsd">
+    <EventLog>
+        <id>b95f7d5d-b24f-431a-aea4-ab4dc0d77ddd</id>
+        <creationTime>2026-03-24T12:41:18.541-07:00</creationTime>
+        <collectionQuantity>1</collectionQuantity>
+        <Event>
+            <result>FMWK0008</result>
+            <id>1</id>
+            <name>Caiso-SOA-Framework</name>
+            <description>The request returned no data.</description>
+            <creationTime>2026-03-24T12:41:18.541-07:00</creationTime>
+            <severity>INFO</severity>
+            <eventType>FMWK</eventType>
+        </Event>
+        <Service>
+            <id>b95f7d5d-b24f-431a-aea4-ab4dc0d77ddd</id>
+            <name>retrieveMarketAwards_v4</name>
+            <description>Caiso-SOA-Framework</description>
+            <comments>None</comments>
+        </Service>
+    </EventLog>
+</outputDataType>

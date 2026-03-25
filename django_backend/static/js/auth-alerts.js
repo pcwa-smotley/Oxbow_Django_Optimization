@@ -151,6 +151,14 @@ class AuthManager {
                 this.updateSystemStatus(data.data);
                 break;
 
+            case 'pi_data_update':
+                console.log('PI data update received:', data.pi_data);
+                // Dispatch event for dashboard.js to pick up
+                window.dispatchEvent(new CustomEvent('pi-data-update', {
+                    detail: { piData: data.pi_data, timestamp: data.timestamp }
+                }));
+                break;
+
             case 'pong':
                 // Keep-alive response
                 break;

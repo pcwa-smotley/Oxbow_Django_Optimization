@@ -6,7 +6,7 @@ from .utils import hour_ending_range
 from .bias import compute_bias_cfs_24h, expected_series_for_lookback
 from .schedule import summer_setpoint_required
 from .utils import is_daytime_hour_pt
-from .caiso_da import get_da_awards_for_forecast
+from .caiso_da import get_da_awards_for_forecast, get_latest_da_award_profile
 
 # Use your existing fetchers (unchanged)
 from .data_fetcher import get_historical_and_current_data, get_combined_r4_r30_forecasts
@@ -92,20 +92,34 @@ def build_inputs(horizon_hours: int = 24,
         r26_last = float(last_vals['R26_Flow'])
         float_last = float(last_vals['Afterbay_Elevation_Setpoint'])
 
-        # Build persistence baseline first (always needed as fallback)
-        persist_raw = lookback['MFP_Total_Gen_GEN_MDFK_and_RA'].tail(horizon_hours)
-        if persist_raw.shape[0] < horizon_hours:
-            add = horizon_hours - persist_raw.shape[0]
-            add_idx = idx_forecast[persist_raw.shape[0]:]
-            persist_raw = pd.concat([persist_raw, pd.Series([persist_raw.iloc[-1]] * add, index=add_idx)])
-        persist_raw.index = idx_forecast
+        # Build fallback baseline from most recent DA awards (rolled forward
+        # by hour-of-day).  Only fall back to yesterday's actuals if no DA
+        # awards exist at all.
+        da_profile = get_latest_da_award_profile()
+        if da_profile is not None and not da_profile.empty:
+            persist_raw = pd.Series(
+                [da_profile.get(ts.hour, da_profile.mean()) for ts in idx_forecast.tz_convert('UTC')],
+                index=idx_forecast,
+                name='MFRA_MW_forecast',
+            )
+            fallback_label = 'da_rollforward'
+        else:
+            # No DA awards at all — fall back to yesterday's actuals
+            persist_raw = lookback['MFP_Total_Gen_GEN_MDFK_and_RA'].tail(horizon_hours)
+            if persist_raw.shape[0] < horizon_hours:
+                add = horizon_hours - persist_raw.shape[0]
+                add_idx = idx_forecast[persist_raw.shape[0]:]
+                persist_raw = pd.concat([persist_raw, pd.Series([persist_raw.iloc[-1]] * add, index=add_idx)])
+            persist_raw.index = idx_forecast
+            fallback_label = 'persistence'
 
-        # Try DA awards — use for covered hours, fill gaps with persistence
+        # Try DA awards for the actual forecast window — use for covered
+        # hours, fill gaps with the rolled-forward DA profile (or actuals).
         da_series, mfra_source = get_da_awards_for_forecast(idx_forecast)
         if da_series is not None and da_series.notna().any():
             mfra_hist = da_series.reindex(idx_forecast).fillna(persist_raw)
         else:
-            mfra_source = 'persistence'
+            mfra_source = fallback_label
             mfra_hist = persist_raw
 
         def fill_or_hold(colname: str, last_value: float) -> pd.Series:

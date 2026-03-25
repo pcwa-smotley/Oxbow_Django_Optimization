@@ -221,6 +221,50 @@ def aggregate_hourly_mw(awards_df: pd.DataFrame) -> Optional[pd.Series]:
 # High-level interface for build_inputs.py
 # ---------------------------------------------------------------------------
 
+def get_latest_da_award_profile() -> Optional[pd.Series]:
+    """
+    Fetch the most recent complete day of DA awards to use as a rolling
+    fallback when the forecast window extends beyond DA coverage.
+
+    Returns a 24-element Series indexed by hour-of-day (0-23) with MW values,
+    or None if no awards are stored.
+    """
+    try:
+        from django.db import OperationalError, ProgrammingError
+        from optimization_api.models import CAISODAAwardSummary
+
+        latest = CAISODAAwardSummary.objects.order_by('-interval_start_utc').first()
+        if not latest:
+            return None
+
+        trade_date = latest.trade_date
+        day_awards = CAISODAAwardSummary.objects.filter(
+            trade_date=trade_date,
+        ).order_by('interval_start_utc')
+
+        if not day_awards.exists():
+            return None
+
+        data = {}
+        for s in day_awards:
+            ts = pd.Timestamp(s.interval_start_utc)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize('UTC')
+            data[ts.hour] = s.total_mw
+
+        profile = pd.Series(data, name='MFRA_MW_forecast').sort_index()
+        logger.info(f"Loaded DA award profile from {trade_date}: "
+                     f"{len(profile)} hours, avg={profile.mean():.1f} MW")
+        return profile
+
+    except (ImportError, OperationalError, ProgrammingError) as e:
+        logger.debug(f"Cannot query DA award profile: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Unexpected error fetching DA award profile: {e}")
+        return None
+
+
 def get_da_awards_for_forecast(forecast_index: pd.DatetimeIndex) -> Tuple[Optional[pd.Series], str]:
     """
     Look up stored DA awards that overlap with the forecast time range.

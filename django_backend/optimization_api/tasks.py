@@ -116,9 +116,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
         # Update progress
         self.update_state(
             state='PROGRESS',
-            meta={'current': 0, 'total': 100, 'status': 'Initializing optimization...'}
+            meta={'current': 5, 'total': 100, 'status': 'Fetching PI data...'}
         )
-        run.update_progress('Initializing optimization...', 5)
+        run.update_progress('Fetching PI data...', 5)
 
         # Try to load optimization modules
         build_inputs, optimizer, cli, optimization_constants = load_optimization_modules()
@@ -130,9 +130,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
         # Continue with real optimization if modules are available
         self.update_state(
             state='PROGRESS',
-            meta={'current': 20, 'total': 100, 'status': 'Starting optimization pipeline...'}
+            meta={'current': 20, 'total': 100, 'status': 'Loading forecast data...'}
         )
-        run.update_progress('Starting optimization pipeline...', 20)
+        run.update_progress('Loading forecast data...', 20)
 
         # Prepare optimization parameters
         optimization_params = run.get_effective_parameters()
@@ -167,9 +167,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
         # Fetch input data for the optimization
         self.update_state(
             state='PROGRESS',
-            meta={'current': 40, 'total': 100, 'status': 'Fetching input data...'}
+            meta={'current': 40, 'total': 100, 'status': 'Setting up optimization...'}
         )
-        run.update_progress('Fetching input data...', 40)
+        run.update_progress('Setting up optimization...', 40)
 
         try:
             historical_start = None
@@ -192,9 +192,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
             # Notify that input data has been loaded
             self.update_state(
                 state='PROGRESS',
-                meta={'current': 55, 'total': 100, 'status': 'Input data loaded'}
+                meta={'current': 55, 'total': 100, 'status': 'Setting up optimization — building MILP model...'}
             )
-            run.update_progress('Input data loaded', 55)
+            run.update_progress('Setting up optimization — building MILP model...', 55)
 
             cfg = optimizer.OptimizeConfig(
                 min_elev_ft=optimization_constants.ABAY_MIN_ELEV_FT,
@@ -229,9 +229,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
             # Solve the optimization problem
             self.update_state(
                 state='PROGRESS',
-                meta={'current': 60, 'total': 100, 'status': 'Solving optimization...'}
+                meta={'current': 60, 'total': 100, 'status': 'Solving optimization — running CBC solver...'}
             )
-            run.update_progress('Solving optimization...', 60)
+            run.update_progress('Solving optimization — running CBC solver...', 60)
 
             result_df, diagnostics = optimizer.build_and_solve(
                 forecast_df=forecast_df,
@@ -245,9 +245,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
             # Optimization solved, begin post-processing
             self.update_state(
                 state='PROGRESS',
-                meta={'current': 75, 'total': 100, 'status': 'Generating output...'}
+                meta={'current': 75, 'total': 100, 'status': 'Recalculating state — computing setpoints...'}
             )
-            run.update_progress('Generating output...', 75)
+            run.update_progress('Recalculating state — computing setpoints...', 75)
 
             try:
                 s_over, change_times, g_avg = cli.compute_setpoint_change_annotations(
@@ -287,9 +287,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
             # Notify that result compilation is underway
             self.update_state(
                 state='PROGRESS',
-                meta={'current': 80, 'total': 100, 'status': 'Compiling results...'}
+                meta={'current': 80, 'total': 100, 'status': 'Recalculating state — generating output...'}
             )
-            run.update_progress('Compiling results...', 80)
+            run.update_progress('Recalculating state — generating output...', 80)
 
             historical_lookback_df = lookback_df
             diagnostics = diagnostics or {}
@@ -314,9 +314,9 @@ def run_optimization_task(self, run_id, optimization_ui_params=None):
         # Process results
         self.update_state(
             state='PROGRESS',
-            meta={'current': 90, 'total': 100, 'status': 'Processing results...'}
+            meta={'current': 90, 'total': 100, 'status': 'Finalizing results — saving to database...'}
         )
-        run.update_progress('Processing results...', 90)
+        run.update_progress('Finalizing results — saving to database...', 90)
 
         # REMOVED THE PROBLEMATIC BLOCK THAT WAS OVERWRITING THE DATA
 
@@ -1053,6 +1053,26 @@ def check_system_alerts(self):
                 state='PROGRESS',
                 meta={'status': 'Checking alerts...'}
             )
+
+        # Broadcast PI data to all connected WebSocket clients
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    "pi_broadcast",
+                    {
+                        'type': 'send_pi_data',
+                        'data': {
+                            'type': 'pi_data_update',
+                            'pi_data': system_data,
+                            'timestamp': timezone.now().isoformat()
+                        }
+                    }
+                )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast PI data: {e}")
 
         # Check all alerts
         triggered_alerts = alerting_service.check_all_alerts(system_data)

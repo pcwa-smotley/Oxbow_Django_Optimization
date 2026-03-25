@@ -1290,25 +1290,55 @@ class CurrentStateView(APIView):
     def get(self, request):
         """Get current reservoir and system state"""
         try:
-            # Simulate current state data
-            current_state = {
-                'timestamp': timezone.now().isoformat(),
-                'abay_elevation_ft': 1171.5,
-                'abay_volume_af': 2450.8,
-                'oxph_power_mw': 3.2,
-                'oxph_status': 'Running',
-                'r4_flow_cfs': 825.3,
-                'r30_flow_cfs': 1150.7,
-                'r20_flow_cfs': 945.2,
-                'r5l_flow_cfs': 155.8,
-                'r26_flow_cfs': 215.4,
-                'mfra_power_mw': 165.8,
-                'ccs_mode': 0,
-                'float_level_setpoint_ft': 1173.0,
-                'system_status': 'Normal',
-                'optimization_modules_loaded': _optimization_modules_loaded,
-                'last_optimization': None
-            }
+            # Try to fetch live PI data
+            pi_data = None
+            try:
+                from optimization_api.alerting import alerting_service
+                pi_data = alerting_service.fetch_current_pi_data()
+            except Exception as e:
+                logger.warning(f"Could not fetch live PI data: {e}")
+
+            if pi_data:
+                current_state = {
+                    'timestamp': pi_data.get('timestamp', timezone.now().isoformat()),
+                    'abay_elevation_ft': pi_data.get('afterbay_elevation'),
+                    'oxph_power_mw': pi_data.get('oxph_power'),
+                    'oxph_setpoint_mw': pi_data.get('oxph_setpoint'),
+                    'oxph_status': 'Running' if pi_data.get('oxph_power', 0) and pi_data['oxph_power'] > 0.1 else 'Offline',
+                    'r4_flow_cfs': pi_data.get('r4_flow'),
+                    'r30_flow_cfs': pi_data.get('r30_flow'),
+                    'r20_flow_cfs': pi_data.get('r20_flow'),
+                    'r5l_flow_cfs': pi_data.get('r5l_flow'),
+                    'r26_flow_cfs': pi_data.get('r26_flow'),
+                    'mfra_power_mw': pi_data.get('mfra_power'),
+                    'ccs_mode': pi_data.get('ccs_mode'),
+                    'float_level_setpoint_ft': pi_data.get('float_level'),
+                    'net_flow_cfs': pi_data.get('net_flow'),
+                    'spillage': pi_data.get('spillage', 0),
+                    'system_status': 'Normal',
+                    'optimization_modules_loaded': _optimization_modules_loaded,
+                    'last_optimization': None,
+                    'pi_live': True,
+                }
+            else:
+                current_state = {
+                    'timestamp': timezone.now().isoformat(),
+                    'abay_elevation_ft': None,
+                    'oxph_power_mw': None,
+                    'oxph_status': 'Unknown',
+                    'r4_flow_cfs': None,
+                    'r30_flow_cfs': None,
+                    'r20_flow_cfs': None,
+                    'r5l_flow_cfs': None,
+                    'r26_flow_cfs': None,
+                    'mfra_power_mw': None,
+                    'ccs_mode': None,
+                    'float_level_setpoint_ft': None,
+                    'system_status': 'PI Unavailable',
+                    'optimization_modules_loaded': _optimization_modules_loaded,
+                    'last_optimization': None,
+                    'pi_live': False,
+                }
 
             # Add information about the most recent optimization run
             latest_run = OptimizationRun.objects.filter(

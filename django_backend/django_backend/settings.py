@@ -36,6 +36,7 @@ ACCOUNT_SIGNUP_ENABLED = False  # If using django-allauth
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

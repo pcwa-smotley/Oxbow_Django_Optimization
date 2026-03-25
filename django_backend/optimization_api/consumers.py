@@ -28,6 +28,12 @@ class AlertConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
+        # Join broadcast group for PI data updates
+        await self.channel_layer.group_add(
+            "pi_broadcast",
+            self.channel_name
+        )
+
         await self.accept()
         logger.info(f"WebSocket connected for user: {self.user.username}")
 
@@ -46,6 +52,10 @@ class AlertConsumer(AsyncWebsocketConsumer):
                 self.user_group_name,
                 self.channel_name
             )
+        await self.channel_layer.group_discard(
+            "pi_broadcast",
+            self.channel_name
+        )
 
         logger.info(f"WebSocket disconnected for user: {getattr(self.user, 'username', 'unknown')}")
 
@@ -80,6 +90,10 @@ class AlertConsumer(AsyncWebsocketConsumer):
 
     async def send_system_update(self, event):
         """Send system status update to client"""
+        await self.send(text_data=json.dumps(event['data']))
+
+    async def send_pi_data(self, event):
+        """Send PI data update to client (broadcast from alert monitor)"""
         await self.send(text_data=json.dumps(event['data']))
 
     @database_sync_to_async
